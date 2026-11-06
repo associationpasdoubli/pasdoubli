@@ -67,6 +67,7 @@ const canAccessTab = (tab) => {
   const r = currentRole.value;
   if (tab === 'poles') return accessiblePoles.value.length > 0;
   if (tab === 'materiel') return true;
+  if (tab === 'budget_tresorerie') return r === 'tresorerie';
   if (tab === 'messages') return r === 'communication';
   if (tab === 'benevoles') return r === 'communication';
   if (tab === 'faq') return r === 'communication';
@@ -115,7 +116,8 @@ const showMaterialModal = ref(false);
 const materialForm = ref({
   article: '',
   quantite: 1,
-  details: '',
+  estimated_price: null,
+  details: '', // Justification obligatoire
   pole: ''
 });
 
@@ -135,10 +137,99 @@ const isLogistiqueOrDirection = computed(() => {
   return isDirection.value || currentRole.value === 'logistique';
 });
 
+const isTresorerieOrDirection = computed(() => {
+  return isDirection.value || currentRole.value === 'tresorerie';
+});
+
 const filteredMaterialRequests = computed(() => {
-  if (isLogistiqueOrDirection.value) return materialRequests.value;
+  if (isLogistiqueOrDirection.value || isTresorerieOrDirection.value) return materialRequests.value;
   return materialRequests.value.filter(m => m.pole === currentRole.value);
 });
+
+// Totaux & Budgets
+const totalEstimatedBudget = computed(() => {
+  return materialRequests.value.reduce((acc, item) => {
+    if (item.estimated_price !== null && item.estimated_price !== undefined) {
+      return acc + (Number(item.estimated_price) * (item.quantite || 1));
+    }
+    return acc;
+  }, 0);
+});
+
+// Synthèse Trésorerie par Pôle
+const budgetSummaryByPole = computed(() => {
+  const summary = {};
+  allPoles.forEach(p => {
+    summary[p.id] = { label: p.label, total: 0, count: 0, validatedTotal: 0 };
+  });
+
+  materialRequests.value.forEach(item => {
+    const pId = item.pole || 'autre';
+    if (!summary[pId]) {
+      summary[pId] = { label: pId, total: 0, count: 0, validatedTotal: 0 };
+    }
+    const cost = item.estimated_price ? Number(item.estimated_price) * (item.quantite || 1) : 0;
+    summary[pId].total += cost;
+    summary[pId].count += 1;
+    if (item.status === 'valide' || item.status === 'disponible') {
+      summary[pId].validatedTotal += cost;
+    }
+  });
+
+  return Object.values(summary).filter(s => s.count > 0);
+});
+
+// ================= FONCTIONS D'EXPORT EXCEL (CSV UTF-8) ================= //
+const exportToExcel = (type = 'logistique') => {
+  let csvContent = '\uFEFF'; // BOM UTF-8 pour Excel
+  let filename = '';
+
+  if (type === 'logistique') {
+    filename = `demandes_materiel_logistique_${new Date().toISOString().slice(0, 10)}.csv`;
+    csvContent += 'Pôle;Article / Commande;Quantité;Justification / Détail;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Statut;Retour Logistique;Date\n';
+
+    filteredMaterialRequests.value.forEach(req => {
+      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
+      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
+      const qte = req.quantite || 1;
+      const details = `"${(req.details || '').replace(/"/g, '""')}"`;
+      const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
+      const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '';
+      const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '';
+      const status = `"${(materialStatusList.find(s => s.id === req.status)?.label || req.status || '').replace(/"/g, '""')}"`;
+      const reponse = `"${(req.reponse_logistique || '').replace(/"/g, '""')}"`;
+      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
+
+      csvContent += `${pole};${article};${qte};${details};${demandeur};${prix};${total};${status};${reponse};${date}\n`;
+    });
+  } else if (type === 'tresorerie') {
+    filename = `budget_materiel_tresorerie_${new Date().toISOString().slice(0, 10)}.csv`;
+    csvContent += 'Pôle;Article;Quantité;Prix Unitaire (€);Montant Total Estimé (€);Statut;Justification du Besoin;Demandeur;Date\n';
+
+    materialRequests.value.forEach(req => {
+      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
+      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
+      const qte = req.quantite || 1;
+      const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '0,00';
+      const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '0,00';
+      const status = `"${(materialStatusList.find(s => s.id === req.status)?.label || req.status || '').replace(/"/g, '""')}"`;
+      const details = `"${(req.details || '').replace(/"/g, '""')}"`;
+      const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
+      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
+
+      csvContent += `${pole};${article};${qte};${prix};${total};${status};${details};${demandeur};${date}\n`;
+    });
+  }
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  triggerToast('Export Excel téléchargé !');
+};
 
 // Modales FAQ & Sponsors
 const showFaqModal = ref(false);
@@ -166,7 +257,7 @@ const poleLabels = {
   logistique: 'Logistique'
 };
 
-// ================= AUTHENTIFICATION & CHANGEMENT DE COMPTE ================= //
+// ================= AUTHENTIFICATION & ACTIONS ================= //
 const handleLogin = async () => {
   loginError.value = '';
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -192,7 +283,6 @@ const handleLogout = async () => {
   window.location.hash = '';
 };
 
-// Bascule rapide vers un autre compte
 const openSwitchAccount = () => {
   loginEmail.value = '';
   loginPassword.value = '';
@@ -438,6 +528,7 @@ const openMaterialRequestModal = () => {
   materialForm.value = {
     article: '',
     quantite: 1,
+    estimated_price: null,
     details: '',
     pole: isDirection.value ? selectedPole.value : currentRole.value
   };
@@ -445,14 +536,26 @@ const openMaterialRequestModal = () => {
 };
 
 const submitMaterialRequest = async () => {
-  if (!materialForm.value.article || materialForm.value.quantite < 1) return;
+  if (!materialForm.value.article || materialForm.value.quantite < 1) {
+    triggerToast('Veuillez renseigner un article et une quantité valide.');
+    return;
+  }
+
+  // VALIDATION OBLIGATOIRE DU MOTIF
+  if (!materialForm.value.details || !materialForm.value.details.trim()) {
+    triggerToast('La justification du besoin est obligatoire !');
+    return;
+  }
 
   const payload = {
     pole: materialForm.value.pole || currentRole.value,
     demandeur: userRoleTitle.value,
     article: materialForm.value.article.trim(),
     quantite: materialForm.value.quantite,
-    details: materialForm.value.details?.trim() || null,
+    estimated_price: (materialForm.value.estimated_price !== null && materialForm.value.estimated_price !== '') 
+      ? Number(materialForm.value.estimated_price) 
+      : null,
+    details: materialForm.value.details.trim(),
     status: 'en_attente'
   };
 
@@ -460,7 +563,10 @@ const submitMaterialRequest = async () => {
   if (!error && data) {
     materialRequests.value.unshift(data[0]);
     showMaterialModal.value = false;
-    triggerToast('Demande transmise à la logistique !');
+    triggerToast('Demande transmise avec justification !');
+  } else if (error) {
+    triggerToast('Erreur lors de l’envoi de la demande.');
+    console.error(error);
   }
 };
 
@@ -676,7 +782,6 @@ onMounted(async () => {
         </div>
 
         <div class="flex items-center gap-2.5 flex-wrap">
-          <!-- BOUTON : CHANGER DE COMPTE -->
           <button 
             @click="openSwitchAccount" 
             class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
@@ -715,6 +820,17 @@ onMounted(async () => {
         >
           <i class="fa-solid fa-boxes-stacked"></i>
           <span>Besoins Matériel ({{ filteredMaterialRequests.length }})</span>
+        </button>
+
+        <!-- NOUVEL ONGLET BUDGET TRÉSORERIE -->
+        <button 
+          v-if="canAccessTab('budget_tresorerie')"
+          @click="currentTab = 'budget_tresorerie'" 
+          :class="currentTab === 'budget_tresorerie' ? 'bg-emerald-700 text-white shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'"
+          class="px-5 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2"
+        >
+          <i class="fa-solid fa-file-invoice-dollar"></i>
+          <span>Budget & Pôles (Trésorerie)</span>
         </button>
 
         <button 
@@ -885,70 +1001,106 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE BESOINS EN MATÉRIEL ================= -->
+      <!-- ================= VUE BESOINS EN MATÉRIEL (LOGISTIQUE) ================= -->
       <div v-if="currentTab === 'materiel'" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
-              <i class="fa-solid text-emerald-600"></i>
-              <span>{{ isLogistiqueOrDirection ? 'Tableau Central du Matériel' : 'Besoins Matériel de votre Pôle' }}</span>
+              <i class="fa-solid fa-boxes-packing text-emerald-600"></i>
+              <span>{{ isLogistiqueOrDirection ? 'Tableau Central du Matériel (Pôle Logistique)' : 'Besoins Matériel de votre Pôle' }}</span>
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">
               {{ isLogistiqueOrDirection 
-                ? 'Consultez, commentez et validez le matériel demandé par les pôles.' 
-                : 'Transmettez vos besoins et consultez les retours de l’équipe logistique.' }}
+                ? 'Suivi des matériels demandés par pôle avec motif impératif et retours logistiques.' 
+                : 'Transmettez vos besoins obligatoirement justifiés et consultez les retours.' }}
             </p>
           </div>
 
-          <button 
-            @click="openMaterialRequestModal"
-            class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
-          >
-            <i class="fa-solid fa-plus"></i>
-            <span>Demander du matériel</span>
-          </button>
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <!-- EXPORT EXCEL LOGISTIQUE -->
+            <button 
+              @click="exportToExcel('logistique')" 
+              class="px-3.5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-2"
+              title="Télécharger le fichier compatible Excel"
+            >
+              <i class="fa-solid fa-file-excel text-sm"></i>
+              <span>Exporter Excel (.csv)</span>
+            </button>
+
+            <!-- Badge total estimé -->
+            <div class="bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 shadow-2xs flex items-center gap-2">
+              <span class="text-slate-400 font-semibold uppercase text-[10px]">Coût indicatif :</span>
+              <span class="text-emerald-700 font-mono text-sm font-extrabold">{{ totalEstimatedBudget.toFixed(2) }} €</span>
+            </div>
+
+            <button 
+              @click="openMaterialRequestModal"
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
+            >
+              <i class="fa-solid fa-plus"></i>
+              <span>Demander du matériel</span>
+            </button>
+          </div>
         </div>
 
+        <!-- TABLEAU LOGISTIQUE AVEC COLONNE PÔLE ET COMMANDE & DÉTAILS -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-4">Pôle</th>
-                  <th class="p-4">Matériel & Qté</th>
-                  <th class="p-4">Demandeur & Détails</th>
-                  <th class="p-4">Retour Logistique</th>
-                  <th class="p-4">Statut</th>
-                  <th class="p-4 text-right">Actions</th>
+                  <th class="p-4 w-32">Pôle</th>
+                  <th class="p-4">Commande & Détails (Obligatoire)</th>
+                  <th class="p-4 w-36">Prix indicatif</th>
+                  <th class="p-4 max-w-xs">Retour Logistique</th>
+                  <th class="p-4 w-36">Statut</th>
+                  <th class="p-4 text-right w-16">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-for="item in filteredMaterialRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
-                  <!-- Pôle -->
-                  <td class="p-4 whitespace-nowrap">
+                  <!-- COLONNE PÔLE -->
+                  <td class="p-4 whitespace-nowrap align-top">
                     <span class="inline-block px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                       {{ item.pole }}
                     </span>
+                    <div class="text-[10px] text-slate-400 mt-1">Par {{ item.demandeur }}</div>
                   </td>
 
-                  <!-- Article & Qté -->
-                  <td class="p-4">
-                    <div class="font-black text-slate-900 text-sm flex items-center gap-2">
-                      <span>{{ item.article }}</span>
+                  <!-- COLONNE COMMANDE & DÉTAIL / JUSTIFICATION -->
+                  <td class="p-4 align-top">
+                    <div class="flex items-center gap-2 mb-1.5">
+                      <span class="font-black text-slate-900 text-sm">{{ item.article }}</span>
                       <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-xs font-mono font-bold rounded-full">
                         x{{ item.quantite }}
                       </span>
                     </div>
+
+                    <!-- MOTIF OBLIGATOIRE MIS EN ÉVIDENCE -->
+                    <div class="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-700 text-xs">
+                      <div class="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                        <i class="fa-solid fa-circle-info text-emerald-600"></i>
+                        <span>Justification du besoin :</span>
+                      </div>
+                      <p class="leading-relaxed whitespace-pre-wrap">{{ item.details }}</p>
+                    </div>
                   </td>
 
-                  <!-- Demandeur & Précisions -->
-                  <td class="p-4">
-                    <div class="text-slate-700 font-semibold text-[11px]">{{ item.demandeur }}</div>
-                    <p v-if="item.details" class="text-slate-500 italic mt-0.5 text-xs">{{ item.details }}</p>
+                  <!-- PRIX ESTIMÉ -->
+                  <td class="p-4 whitespace-nowrap align-top">
+                    <div v-if="item.estimated_price !== null && item.estimated_price !== undefined">
+                      <span class="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                        {{ Number(item.estimated_price).toFixed(2) }} € <span class="text-[9px] font-sans font-normal text-slate-500">/u</span>
+                      </span>
+                      <div class="text-[10px] text-slate-500 font-semibold mt-1">
+                        Total : <strong class="text-slate-800 font-mono">{{ (Number(item.estimated_price) * item.quantite).toFixed(2) }} €</strong>
+                      </div>
+                    </div>
+                    <span v-else class="text-slate-400 italic text-[11px]">Non renseigné</span>
                   </td>
 
-                  <!-- RETOUR / COMMENTAIRE DE LA LOGISTIQUE -->
-                  <td class="p-4 max-w-xs">
+                  <!-- RETOUR / NOTE DE LA LOGISTIQUE -->
+                  <td class="p-4 align-top max-w-xs">
                     <div v-if="item.reponse_logistique" class="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-emerald-900 text-xs">
                       <div class="font-bold flex items-center gap-1 text-[10px] uppercase text-emerald-700 mb-0.5">
                         <i class="fa-solid fa-comment-dots"></i>
@@ -960,7 +1112,6 @@ onMounted(async () => {
                       Pas de retour pour l'instant.
                     </div>
 
-                    <!-- Bouton pour que la logistique ou direction modifie la réponse -->
                     <button 
                       v-if="isLogistiqueOrDirection"
                       @click="openLogistiqueComment(item)"
@@ -971,8 +1122,8 @@ onMounted(async () => {
                     </button>
                   </td>
 
-                  <!-- Statut -->
-                  <td class="p-4 whitespace-nowrap">
+                  <!-- STATUT -->
+                  <td class="p-4 whitespace-nowrap align-top">
                     <div v-if="isLogistiqueOrDirection">
                       <select 
                         :value="item.status" 
@@ -992,8 +1143,8 @@ onMounted(async () => {
                     </span>
                   </td>
 
-                  <!-- Actions -->
-                  <td class="p-4 text-right whitespace-nowrap">
+                  <!-- ACTIONS -->
+                  <td class="p-4 text-right whitespace-nowrap align-top">
                     <button 
                       @click="deleteMaterialRequest(item.id)" 
                       class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
@@ -1008,6 +1159,101 @@ onMounted(async () => {
                   <td colspan="6" class="p-10 text-center text-slate-400 italic text-xs">
                     Aucune demande de matériel enregistrée pour le moment.
                   </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE ================= -->
+      <div v-if="currentTab === 'budget_tresorerie' && canAccessTab('budget_tresorerie')" class="space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-file-invoice-dollar text-emerald-600"></i>
+              <span>Budget Matériel & Dépenses par Pôle</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Consolidation financière de toutes les demandes pour suivi de la trésorerie.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <!-- EXPORT EXCEL TRÉSORERIE -->
+            <button 
+              @click="exportToExcel('tresorerie')" 
+              class="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-2"
+              title="Télécharger le récapitulatif financier complet pour Excel"
+            >
+              <i class="fa-solid fa-file-excel text-sm"></i>
+              <span>Exporter Rapport Budgétaire (.csv)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- RÉCAPITULATIF SYNTHÉTIQUE PAR PÔLE -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div 
+            v-for="b in budgetSummaryByPole" 
+            :key="b.label"
+            class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between"
+          >
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-black text-sm uppercase tracking-wider text-slate-800">Pôle {{ b.label }}</span>
+                <span class="text-xs bg-slate-100 px-2 py-0.5 rounded-full font-bold text-slate-600">
+                  {{ b.count }} article(s)
+                </span>
+              </div>
+              <div class="text-2xl font-black text-emerald-700 font-mono mt-1">
+                {{ b.total.toFixed(2) }} €
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Validé / Engagé :</span>
+              <strong class="font-mono text-slate-800">{{ b.validatedTotal.toFixed(2) }} €</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLEAU DÉTAILLÉ DE TRÉSORERIE -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Toutes les demandes de dépenses</span>
+            <span class="text-xs font-semibold text-slate-500">Total général estimé : <strong class="text-emerald-700 font-mono">{{ totalEstimatedBudget.toFixed(2) }} €</strong></span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50/50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                  <th class="p-3.5">Pôle</th>
+                  <th class="p-3.5">Article</th>
+                  <th class="p-3.5">Qté</th>
+                  <th class="p-3.5">Prix Unit. (€)</th>
+                  <th class="p-3.5">Total Estimé (€)</th>
+                  <th class="p-3.5">Statut</th>
+                  <th class="p-3.5">Justification</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="item in materialRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
+                  <td class="p-3.5 font-bold uppercase text-[11px] text-slate-700">{{ item.pole }}</td>
+                  <td class="p-3.5 font-extrabold text-slate-900">{{ item.article }}</td>
+                  <td class="p-3.5 font-mono">{{ item.quantite }}</td>
+                  <td class="p-3.5 font-mono text-slate-700">
+                    {{ item.estimated_price ? `${Number(item.estimated_price).toFixed(2)} €` : '—' }}
+                  </td>
+                  <td class="p-3.5 font-mono font-bold text-emerald-800">
+                    {{ item.estimated_price ? `${(Number(item.estimated_price) * item.quantite).toFixed(2)} €` : '0.00 €' }}
+                  </td>
+                  <td class="p-3.5">
+                    <span :class="[materialStatusList.find(s => s.id === item.status)?.badge, 'px-2 py-0.5 rounded text-[10px] font-bold border inline-block']">
+                      {{ materialStatusList.find(s => s.id === item.status)?.label }}
+                    </span>
+                  </td>
+                  <td class="p-3.5 text-slate-600 max-w-sm truncate" :title="item.details">{{ item.details }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1116,7 +1362,7 @@ onMounted(async () => {
             <div class="flex flex-wrap gap-1.5 pt-0.5">
               <span 
                 v-for="pole in b.poles" 
-                :key="pole"
+                :key="pole" 
                 class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200"
               >
                 <i class="fa-solid fa-check text-emerald-600 mr-1 text-[10px]"></i>
@@ -1361,7 +1607,7 @@ onMounted(async () => {
           <textarea 
             v-model="logistiqueCommentInput" 
             rows="4" 
-            placeholder="Ex. Matériel réservé aux ateliers municipaux, retrait possible samedi à 14h..."
+            placeholder="Ex. Matériel réservé aux ateliers municipaux, retrait possible samedi à 14h..." 
             class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
           ></textarea>
         </div>
@@ -1439,7 +1685,6 @@ onMounted(async () => {
       </div>
 
       <div class="flex-1 overflow-y-auto space-y-6 pr-1">
-        <!-- ÉTAPES -->
         <div>
           <div class="flex items-center justify-between mb-2">
             <h4 class="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
@@ -1494,7 +1739,6 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- COMMENTAIRES -->
         <div class="pt-4 border-t border-slate-100">
           <h4 class="text-xs font-black uppercase text-slate-700 tracking-wider mb-2 flex items-center gap-1.5">
             <i class="fa-regular fa-comments text-emerald-600"></i>
@@ -1536,7 +1780,7 @@ onMounted(async () => {
     </div>
   </div>
 
-  <!-- MODALE DEMANDE DE MATÉRIEL -->
+  <!-- MODALE DEMANDE DE MATÉRIEL (AVEC JUSTIFICATION OBLIGATOIRE ET PRIX OPTIONNEL) -->
   <div v-if="showMaterialModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
       <button @click="showMaterialModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
@@ -1544,7 +1788,7 @@ onMounted(async () => {
       </button>
 
       <h3 class="text-xl font-black text-slate-900 mb-1">Demande de Matériel</h3>
-      <p class="text-xs text-slate-500 mb-4">Cette requête sera directement transmise au responsable logistique.</p>
+      <p class="text-xs text-slate-500 mb-4">La justification de chaque besoin est exigée par le pôle logistique.</p>
 
       <div class="space-y-3.5">
         <div v-if="isDirection">
@@ -1555,7 +1799,7 @@ onMounted(async () => {
         </div>
 
         <div>
-          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Article / Matériel souhaité</label>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Article / Matériel souhaité *</label>
           <input 
             v-model="materialForm.article" 
             type="text" 
@@ -1564,22 +1808,43 @@ onMounted(async () => {
           />
         </div>
 
-        <div>
-          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Quantité</label>
-          <input 
-            v-model.number="materialForm.quantite" 
-            type="number" 
-            min="1" 
-            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
-          />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Quantité *</label>
+            <input 
+              v-model.number="materialForm.quantite" 
+              type="number" 
+              min="1" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">
+              Prix unit. indicatif (€) <span class="text-[9px] text-slate-400 font-normal lowercase">(option)</span>
+            </label>
+            <input 
+              v-model.number="materialForm.estimated_price" 
+              type="number" 
+              step="0.01" 
+              min="0" 
+              placeholder="Ex. 15.50" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+            />
+          </div>
         </div>
 
+        <!-- JUSTIFICATION STRICTEMENT OBLIGATOIRE -->
         <div>
-          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Précisions / Lieu d'installation</label>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1 flex items-center justify-between">
+            <span>Pourquoi demandez-vous cela ? *</span>
+            <span class="text-[10px] text-rose-600 font-bold lowercase">Obligatoire</span>
+          </label>
           <textarea 
             v-model="materialForm.details" 
             rows="3" 
-            placeholder="Ex. Nécessaire dès 07h30 au ravitaillement..." 
+            required
+            placeholder="Précisez impérativement l'utilité, l'emplacement exact et l'horaire requis..." 
             class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
           ></textarea>
         </div>
@@ -1645,5 +1910,4 @@ onMounted(async () => {
       </div>
     </div>
   </div>
-
 </template>
