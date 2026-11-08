@@ -4,6 +4,7 @@ import { supabase } from '../../services/supabase';
 
 const currentAmount = ref(0);
 const goalAmount = ref(1000);
+const participantsCount = ref(0);
 const loading = ref(true);
 let subscription = null;
 
@@ -24,13 +25,14 @@ const formattedGoal = computed(() => {
 const loadFundraisingData = async () => {
   const { data, error } = await supabase
     .from('fundraising')
-    .select('current_amount, goal_amount')
+    .select('current_amount, goal_amount, participants_count')
     .eq('id', 1)
     .single();
 
   if (!error && data) {
     currentAmount.value = Number(data.current_amount) || 0;
     goalAmount.value = Number(data.goal_amount) || 5000;
+    participantsCount.value = Number(data.participants_count) || 0;
   }
   loading.value = false;
 };
@@ -48,6 +50,7 @@ onMounted(() => {
         if (payload.new) {
           currentAmount.value = Number(payload.new.current_amount) || 0;
           goalAmount.value = Number(payload.new.goal_amount) || 5000;
+          participantsCount.value = Number(payload.new.participants_count) || 0;
         }
       }
     )
@@ -65,27 +68,35 @@ onUnmounted(() => {
       
       <div class="relative bg-slate-100/70 rounded-3xl p-8 sm:p-12 text-white shadow-2xl border border-emerald-500/20 overflow-hidden">
         
-        <!-- Décorations lumineuses en arrière-plan -->
-        
         <div class="relative z-10 text-center max-w-2xl mx-auto">
 
-          <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-emerald-600 mt-1">
+          <!-- Badge discret des participants en haut pour ne pas surcharger le centre -->
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 border border-emerald-200 text-slate-700 shadow-2xs mb-4">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="text-xs font-bold text-slate-800 font-mono">{{ participantsCount }}</span>
+            <span class="text-xs font-semibold text-slate-500">participants inscrits</span>
+          </div>
+
+          <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-emerald-600">
             Chaque euro compte pour France Alzheimer 37
           </h2>
-          <p class="text-emerald-400 text-sm sm:text-base mt-2">
+          <p class="text-emerald-700/80 text-sm sm:text-base mt-2">
             Grâce à vos inscriptions, vos dons et l'engagement de nos mécènes, suivez l'avancée de la cagnotte reversée à l'association.
           </p>
 
-          <!-- Montant principal -->
+          <!-- Montant principal épuré avec astérisque -->
           <div class="mt-8 mb-6">
             <div v-if="loading" class="py-4">
               <i class="fa-solid fa-circle-notch fa-spin text-3xl text-emerald-400"></i>
             </div>
             <div v-else class="flex flex-col items-center">
-              <span class="text-5xl sm:text-6xl font-black font-mono tracking-tight text-emerald-600 drop-shadow-sm">
-                {{ formattedCurrent }}
-              </span>
-              <span class="text-xs sm:text-sm font-semibold text-emerald-400 mt-1 uppercase tracking-wider">
+              <div class="inline-flex items-start">
+                <span class="text-5xl sm:text-6xl font-black font-mono tracking-tight text-emerald-600 drop-shadow-sm">
+                  {{ formattedCurrent }}
+                </span>
+                <span class="text-2xl sm:text-3xl font-black text-emerald-500 ml-1 leading-none select-none" title="Hors dépenses">*</span>
+              </div>
+              <span class="text-xs sm:text-sm font-semibold text-emerald-700/80 mt-1 uppercase tracking-wider">
                 sur un objectif de {{ formattedGoal }}
               </span>
             </div>
@@ -99,13 +110,18 @@ onUnmounted(() => {
             ></div>
           </div>
 
-          <div class="flex items-center justify-between text-xs font-bold text-emerald-400 px-1 mb-8">
+          <div class="flex items-center justify-between text-xs font-bold text-emerald-600 px-1 mb-2">
             <span>0 €</span>
             <span class="bg-emerald-800/80 px-2.5 py-0.5 rounded-full border border-emerald-400 font-mono text-emerald-300">
               {{ percentage }}% atteint
             </span>
             <span>{{ formattedGoal }}</span>
           </div>
+
+          <!-- Note explicative discrète sous la jauge -->
+          <p class="text-[11px] text-slate-500 italic mb-8">
+            * Ce montant correspond aux fonds collectés bruts et ne prend pas en compte les dépenses logistiques et matérielles.
+          </p>
 
           <!-- Bouton don direct -->
           <div class="flex justify-center">

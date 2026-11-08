@@ -4,7 +4,7 @@ import { supabase } from '../../services/supabase';
 import { useToast } from '../../composables/useToast';
 
 const { triggerToast } = useToast();
-
+const fundraisingParticipants = ref(0);
 // ================= AUTHENTIFICATION & RÔLES ================= //
 const user = ref(null);
 const userProfile = ref(null);
@@ -13,12 +13,11 @@ const loginEmail = ref('');
 const loginPassword = ref('');
 const loginError = ref('');
 
-// Modale changement de compte rapide
 const showSwitchAccountModal = ref(false);
 
 const directionEmails = [
   'rodrigues.thomas2005@gmail.com',
-  'lucierdg@outlook.com'
+  'lucierdg@outlook.fr'
 ];
 
 const currentRole = computed(() => {
@@ -33,20 +32,22 @@ const isDirection = computed(() => currentRole.value === 'direction');
 const userRoleTitle = computed(() => {
   const email = user.value?.email?.toLowerCase();
   if (email === 'rodrigues.thomas2005@gmail.com') return 'Président';
-  if (email === 'lucierdg@outlook.com') return 'Vice-Présidente';
+  if (email === 'lucierdg@outlook.fr') return 'Vice-Présidente';
   const roleMap = {
     communication: 'Pôle Communication',
     sponsor: 'Pôle Sponsors',
     tresorerie: 'Trésorerie',
     animation: 'Pôle Animation',
     logistique: 'Pôle Logistique',
-    parcours: 'Pôle Parcours'
+    parcours: 'Pôle Parcours',
+    direction: 'Pôle Direction'
   };
   return roleMap[currentRole.value] || 'Membre Association';
 });
 
 // ================= PÔLES & GESTION KANBAN ================= //
 const allPoles = [
+  { id: 'direction', label: 'Direction', icon: 'fa-crown' },
   { id: 'animation', label: 'Animation', icon: 'fa-bullhorn' },
   { id: 'sponsor', label: 'Sponsors', icon: 'fa-handshake' },
   { id: 'logistique', label: 'Logistique', icon: 'fa-boxes-packing' },
@@ -60,14 +61,13 @@ const accessiblePoles = computed(() => {
   return allPoles.filter(p => p.id === currentRole.value);
 });
 
-const selectedPole = ref('communication');
+const selectedPole = ref('direction');
 
-// Contrôle strict des onglets
 const canAccessTab = (tab) => {
   if (isDirection.value) return true;
   const r = currentRole.value;
   if (tab === 'poles') return accessiblePoles.value.length > 0;
-  if (tab === 'materiel') return r !== 'tresorerie'; // La trésorerie n'a pas accès au tableau opérationnel logistique
+  if (tab === 'materiel') return r !== 'tresorerie';
   if (tab === 'budget_tresorerie') return r === 'tresorerie';
   if (tab === 'messages') return r === 'communication';
   if (tab === 'benevoles') return r === 'communication';
@@ -93,6 +93,7 @@ const updatingFundraising = ref(false);
 const tasks = ref([]);
 const steps = ref([]);
 const comments = ref([]);
+const taskSaving = ref(false);
 
 const columns = [
   { id: 'sujet', label: 'Sujet / Idée', bgHeader: 'text-emerald-900 border-emerald-900' },
@@ -101,10 +102,25 @@ const columns = [
   { id: 'fait', label: 'Fait', bgHeader: 'text-emerald-900 border-emerald-900' }
 ];
 
-// Modales Post-it
+const postItColorOptions = [
+  { id: 'border-slate-200', label: 'Standard', colorClass: 'border-slate-300 bg-slate-100' },
+  { id: 'border-emerald-500', label: 'Émeraude', colorClass: 'border-emerald-500 bg-emerald-100' },
+  { id: 'border-amber-500', label: 'Ambre', colorClass: 'border-amber-500 bg-amber-100' },
+  { id: 'border-rose-500', label: 'Rose / Rouge', colorClass: 'border-rose-500 bg-rose-100' },
+  { id: 'border-blue-500', label: 'Bleu', colorClass: 'border-blue-500 bg-blue-100' },
+  { id: 'border-purple-500', label: 'Violet', colorClass: 'border-purple-500 bg-purple-100' },
+  { id: 'border-orange-500', label: 'Orange', colorClass: 'border-orange-500 bg-orange-100' }
+];
+
 const showTaskModal = ref(false);
 const editingTask = ref(null);
-const taskForm = ref({ titre: '', description: '', assigne_a: '', status: 'sujet' });
+const taskForm = ref({
+  titre: '',
+  description: '',
+  assigne_a: '',
+  status: 'sujet',
+  border_color: 'border-slate-200'
+});
 
 const showDetailModal = ref(false);
 const currentTaskDetail = ref(null);
@@ -122,7 +138,16 @@ const materialForm = ref({
   pole: ''
 });
 
-// Modale Décision (Logistique ou Trésorerie)
+const showEditMaterialModal = ref(false);
+const editingMaterialId = ref(null);
+const editMaterialForm = ref({
+  article: '',
+  quantite: 1,
+  estimated_price: null,
+  details: '',
+  pole: ''
+});
+
 const showDecisionModal = ref(false);
 const decisionTargetItem = ref(null);
 const decisionType = ref('logistique');
@@ -139,13 +164,18 @@ const decisionStatusList = [
 
 const isLogistiqueOrDirection = computed(() => isDirection.value || currentRole.value === 'logistique');
 const isTresorerieOrDirection = computed(() => isDirection.value || currentRole.value === 'tresorerie');
+const isSponsorOrDirection = computed(() => isDirection.value || currentRole.value === 'sponsor');
 
 const filteredMaterialRequests = computed(() => {
   if (isLogistiqueOrDirection.value) return materialRequests.value;
   return materialRequests.value.filter(m => m.pole === currentRole.value);
 });
 
-// Totaux Trésorerie
+// Demandes orientées vers les sponsors
+const sponsorMaterialRequests = computed(() => {
+  return materialRequests.value.filter(m => m.demande_sponsor === true);
+});
+
 const totalEstimatedBudget = computed(() => {
   return materialRequests.value.reduce((acc, item) => {
     if (item.estimated_price !== null && item.estimated_price !== undefined) {
@@ -177,14 +207,14 @@ const budgetSummaryByPole = computed(() => {
   return Object.values(summary).filter(s => s.count > 0);
 });
 
-// ================= EXPORTS EXCEL (.CSV SANS DOUBLONS) ================= //
+// ================= EXPORTS EXCEL ================= //
 const exportToExcel = (type = 'logistique') => {
   let csvContent = '\uFEFF';
   let filename = '';
 
   if (type === 'logistique') {
     filename = `demandes_materiel_logistique_${new Date().toISOString().slice(0, 10)}.csv`;
-    csvContent += 'Pôle;Article / Commande;Quantité;Justification du Besoin;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Avis Logistique;Motif Logistique;Avis Trésorerie;Date\n';
+    csvContent += 'Pôle;Article / Commande;Quantité;Justification du Besoin;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Avis Logistique;Motif Logistique;Avis Trésorerie;Statut Sponsor;Date\n';
 
     filteredMaterialRequests.value.forEach(req => {
       const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
@@ -197,13 +227,14 @@ const exportToExcel = (type = 'logistique') => {
       const avisLog = `"${(decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '').replace(/"/g, '""')}"`;
       const motifLog = `"${(req.reponse_logistique || '').replace(/"/g, '""')}"`;
       const avisTresor = `"${(decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente').replace(/"/g, '""')}"`;
+      const statutSponsor = req.demande_sponsor ? (req.statut_sponsor === 'pris_en_charge' ? 'Pris en charge (Sponsor)' : (req.statut_sponsor === 'refuse' ? 'Refusé Sponsor' : 'Demandé aux Sponsors')) : 'Non délégué';
       const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
 
-      csvContent += `${pole};${article};${qte};${details};${demandeur};${prix};${total};${avisLog};${motifLog};${avisTresor};${date}\n`;
+      csvContent += `${pole};${article};${qte};${details};${demandeur};${prix};${total};${avisLog};${motifLog};${avisTresor};${statutSponsor};${date}\n`;
     });
   } else if (type === 'tresorerie') {
     filename = `budget_materiel_tresorerie_${new Date().toISOString().slice(0, 10)}.csv`;
-    csvContent += 'Pôle;Article;Quantité;Prix Unitaire (€);Montant Total Estimé (€);Avis Trésorerie;Justification Trésorerie;Avis Logistique;Demandeur;Date\n';
+    csvContent += 'Pôle;Article;Quantité;Prix Unitaire (€);Montant Total Estimé (€);Avis Trésorerie;Justification Trésorerie;Avis Logistique;Statut Sponsor;Demandeur;Date\n';
 
     materialRequests.value.forEach(req => {
       const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
@@ -214,10 +245,11 @@ const exportToExcel = (type = 'logistique') => {
       const avisTresor = `"${(decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente').replace(/"/g, '""')}"`;
       const motifTresor = `"${(req.reponse_tresorerie || '').replace(/"/g, '""')}"`;
       const avisLog = `"${(decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '').replace(/"/g, '""')}"`;
+      const statutSponsor = req.demande_sponsor ? (req.statut_sponsor === 'pris_en_charge' ? 'Pris en charge' : req.statut_sponsor) : 'Non';
       const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
       const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
 
-      csvContent += `${pole};${article};${qte};${prix};${total};${avisTresor};${motifTresor};${avisLog};${demandeur};${date}\n`;
+      csvContent += `${pole};${article};${qte};${prix};${total};${avisTresor};${motifTresor};${avisLog};${statutSponsor};${demandeur};${date}\n`;
     });
   }
 
@@ -239,7 +271,6 @@ const showSponsorModal = ref(false);
 const editingSponsor = ref(null);
 const sponsorForm = ref({ nom: '', description: '', logo_url: '' });
 
-// Libellés bénévoles
 const availabilityLabels = {
   jour_j: 'Le jour J (dimanche)',
   veille: 'La veille (samedi)',
@@ -248,6 +279,7 @@ const availabilityLabels = {
 };
 
 const poleLabels = {
+  direction: 'Direction',
   communication: 'Communication',
   animation: 'Animation',
   parcours: 'Parcours',
@@ -346,12 +378,13 @@ const loadPermittedData = async () => {
   }
 
   if (canAccessTab('cagnotte')) {
-    const { data } = await supabase.from('fundraising').select('*').eq('id', 1).maybeSingle();
-    if (data) {
-      fundraisingCurrent.value = data.current_amount;
-      fundraisingGoal.value = data.goal_amount;
-    }
+  const { data } = await supabase.from('fundraising').select('*').eq('id', 1).maybeSingle();
+  if (data) {
+    fundraisingCurrent.value = data.current_amount;
+    fundraisingGoal.value = data.goal_amount;
+    fundraisingParticipants.value = data.participants_count || 0; // <-- Ajout ici
   }
+}
 };
 
 const loadPoleData = async () => {
@@ -365,7 +398,7 @@ const loadPoleData = async () => {
   if (commentsData) comments.value = commentsData;
 };
 
-// ================= GESTION DU KANBAN ================= //
+// ================= GESTION DU KANBAN (CORRECTION POST-IT) ================= //
 const tasksByStatus = (status) => {
   return tasks.value.filter(t => t.pole === selectedPole.value && t.status === status);
 };
@@ -383,7 +416,13 @@ const getTaskProgress = (taskId) => {
 
 const openCreateTask = (status = 'sujet') => {
   editingTask.value = null;
-  taskForm.value = { titre: '', description: '', assigne_a: '', status };
+  taskForm.value = {
+    titre: '',
+    description: '',
+    assigne_a: '',
+    status,
+    border_color: 'border-slate-200'
+  };
   showTaskModal.value = true;
 };
 
@@ -393,36 +432,70 @@ const openEditTask = (task) => {
     titre: task.titre,
     description: task.description || '',
     assigne_a: task.assigne_a || '',
-    status: task.status
+    status: task.status,
+    border_color: task.border_color || 'border-slate-200'
   };
   showTaskModal.value = true;
 };
 
 const saveTask = async () => {
-  if (!taskForm.value.titre) return;
+  if (!taskForm.value.titre || !taskForm.value.titre.trim()) {
+    triggerToast('Le titre du post-it est requis.');
+    return;
+  }
 
-  if (editingTask.value) {
-    const { error } = await supabase.from('pole_tasks').update(taskForm.value).eq('id', editingTask.value.id);
-    if (!error) {
+  taskSaving.value = true;
+  try {
+    const payload = {
+      titre: taskForm.value.titre.trim(),
+      description: taskForm.value.description ? taskForm.value.description.trim() : null,
+      assigne_a: taskForm.value.assigne_a ? taskForm.value.assigne_a.trim() : null,
+      status: taskForm.value.status,
+      border_color: taskForm.value.border_color || 'border-slate-200'
+    };
+
+    if (editingTask.value) {
+      const { data, error } = await supabase
+        .from('pole_tasks')
+        .update(payload)
+        .eq('id', editingTask.value.id)
+        .select();
+
+      if (error) throw error;
+
       const idx = tasks.value.findIndex(t => t.id === editingTask.value.id);
-      if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], ...taskForm.value };
-      if (currentTaskDetail.value?.id === editingTask.value.id) {
-        currentTaskDetail.value = { ...currentTaskDetail.value, ...taskForm.value };
+      if (idx !== -1 && data && data.length > 0) {
+        tasks.value[idx] = data[0];
+      }
+      if (currentTaskDetail.value?.id === editingTask.value.id && data && data.length > 0) {
+        currentTaskDetail.value = data[0];
       }
       showTaskModal.value = false;
       triggerToast('Post-it mis à jour.');
-    }
-  } else {
-    const { data, error } = await supabase
-      .from('pole_tasks')
-      .insert([{ ...taskForm.value, pole: selectedPole.value }])
-      .select();
+    } else {
+      const insertPayload = {
+        ...payload,
+        pole: selectedPole.value
+      };
 
-    if (!error && data) {
-      tasks.value.push(data[0]);
+      const { data, error } = await supabase
+        .from('pole_tasks')
+        .insert([insertPayload])
+        .select();
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        tasks.value.push(data[0]);
+      }
       showTaskModal.value = false;
-      triggerToast('Post-it créé.');
+      triggerToast('Post-it épinglé avec succès !');
     }
+  } catch (err) {
+    console.error('Erreur saveTask :', err);
+    triggerToast('Erreur lors de l’enregistrement du post-it.');
+  } finally {
+    taskSaving.value = false;
   }
 };
 
@@ -453,7 +526,7 @@ const onDrop = async (event, newStatus) => {
   }
 };
 
-// ================= ÉTAPES ÉVOLUTIVES & COMMENTAIRES POST-IT ================= //
+// ================= ÉTAPES POST-IT ================= //
 const openDetail = (task) => {
   currentTaskDetail.value = task;
   newStepTitle.value = '';
@@ -515,7 +588,7 @@ const addComment = async () => {
   }
 };
 
-// ================= GESTION MATÉRIEL & ARBITRAGE ================= //
+// ================= GESTION MATÉRIEL & DÉLÉGATION SPONSORS ================= //
 const fetchMaterialRequests = async () => {
   const { data } = await supabase
     .from('material_requests')
@@ -557,7 +630,9 @@ const submitMaterialRequest = async () => {
     details: materialForm.value.details.trim(),
     status: 'en_attente',
     avis_logistique: 'en_attente',
-    avis_tresorerie: 'en_attente'
+    avis_tresorerie: 'en_attente',
+    demande_sponsor: false,
+    statut_sponsor: 'non_demande'
   };
 
   const { data, error } = await supabase.from('material_requests').insert([payload]).select();
@@ -567,6 +642,132 @@ const submitMaterialRequest = async () => {
     triggerToast('Demande enregistrée avec succès !');
   } else if (error) {
     triggerToast('Erreur lors de l’envoi de la demande.');
+    console.error(error);
+  }
+};
+
+// Bouton pour demander le sponsoring d'un matériel
+const askSponsorsForMaterial = async (item) => {
+  if (item.demande_sponsor) {
+    triggerToast('Déjà transmis au pôle sponsors.');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('material_requests')
+    .update({ demande_sponsor: true, statut_sponsor: 'en_attente' })
+    .eq('id', item.id);
+
+  if (!error) {
+    item.demande_sponsor = true;
+    item.statut_sponsor = 'en_attente';
+    triggerToast('Besoin transmis au Pôle Sponsors !');
+  } else {
+    triggerToast('Erreur lors de la transmission.');
+  }
+};
+
+// Arbitrage côté Pôle Sponsors (Acceptation -> Post-it 'À faire' / Refus)
+const handleSponsorResponse = async (item, decision) => {
+  if (decision === 'refuse') {
+    const { error } = await supabase
+      .from('material_requests')
+      .update({ statut_sponsor: 'refuse' })
+      .eq('id', item.id);
+
+    if (!error) {
+      item.statut_sponsor = 'refuse';
+      triggerToast('Demande refusée par le pôle sponsors.');
+    }
+    return;
+  }
+
+  // Si accepté : on met à jour la demande et on crée automatiquement le post-it
+  const taskTitle = `Recherche sponsor : ${item.article} (x${item.quantite})`;
+  const taskDesc = `Besoin exprimé par Pôle ${item.pole}.
+Justification : ${item.details}
+Coût estimé : ${item.estimated_price ? `${item.estimated_price} €/u (Total : ${(item.estimated_price * item.quantite).toFixed(2)} €)` : 'Non renseigné'}`;
+
+  const taskPayload = {
+    pole: 'sponsor',
+    titre: taskTitle,
+    description: taskDesc,
+    status: 'a_faire',
+    assigne_a: 'Équipe Sponsors',
+    border_color: 'border-amber-500'
+  };
+
+  const { data: createdTask, error: taskError } = await supabase
+    .from('pole_tasks')
+    .insert([taskPayload])
+    .select();
+
+  if (taskError) {
+    triggerToast('Erreur lors de la création du post-it.');
+    return;
+  }
+
+  const { error: reqError } = await supabase
+    .from('material_requests')
+    .update({ statut_sponsor: 'pris_en_charge' })
+    .eq('id', item.id);
+
+  if (!reqError) {
+    item.statut_sponsor = 'pris_en_charge';
+    if (createdTask && createdTask.length > 0) {
+      tasks.value.push(createdTask[0]);
+    }
+    triggerToast('Besoin pris en charge ! Post-it créé dans "À faire".');
+  }
+};
+
+const openEditMaterialModal = (item) => {
+  editingMaterialId.value = item.id;
+  editMaterialForm.value = {
+    pole: item.pole,
+    article: item.article,
+    quantite: item.quantite || 1,
+    estimated_price: item.estimated_price !== null && item.estimated_price !== undefined ? item.estimated_price : null,
+    details: item.details || ''
+  };
+  showEditMaterialModal.value = true;
+};
+
+const saveEditedMaterial = async () => {
+  if (!editMaterialForm.value.article || editMaterialForm.value.quantite < 1) {
+    triggerToast('Article et quantité valides requis.');
+    return;
+  }
+
+  if (!editMaterialForm.value.details || !editMaterialForm.value.details.trim()) {
+    triggerToast('La justification du besoin est obligatoire !');
+    return;
+  }
+
+  const payload = {
+    pole: editMaterialForm.value.pole,
+    article: editMaterialForm.value.article.trim(),
+    quantite: Number(editMaterialForm.value.quantite),
+    estimated_price: (editMaterialForm.value.estimated_price !== null && editMaterialForm.value.estimated_price !== '')
+      ? Number(editMaterialForm.value.estimated_price)
+      : null,
+    details: editMaterialForm.value.details.trim()
+  };
+
+  const { error } = await supabase
+    .from('material_requests')
+    .update(payload)
+    .eq('id', editingMaterialId.value);
+
+  if (!error) {
+    const idx = materialRequests.value.findIndex(m => m.id === editingMaterialId.value);
+    if (idx !== -1) {
+      materialRequests.value[idx] = { ...materialRequests.value[idx], ...payload };
+    }
+    showEditMaterialModal.value = false;
+    triggerToast('Demande mise à jour avec succès !');
+  } else {
+    triggerToast('Erreur lors de la mise à jour.');
     console.error(error);
   }
 };
@@ -624,7 +825,12 @@ const saveDecision = async () => {
 };
 
 const deleteMaterialRequest = async (id) => {
-  const { error } = await supabase.from('material_requests').delete().eq('id', id);
+  if (!confirm('Supprimer définitivement cette demande ?')) return;
+  const { error } = await supabase
+    .from('material_requests')
+    .delete()
+    .eq('id', id);
+
   if (!error) {
     materialRequests.value = materialRequests.value.filter(m => m.id !== id);
     triggerToast('Demande supprimée.');
@@ -727,12 +933,13 @@ const handleSaveFundraising = async () => {
     .update({
       current_amount: Number(fundraisingCurrent.value) || 0,
       goal_amount: Number(fundraisingGoal.value) || 5000,
+      participants_count: Number(fundraisingParticipants.value) || 0, // <-- Ajout ici
       updated_at: new Date().toISOString()
     })
     .eq('id', 1);
 
   updatingFundraising.value = false;
-  if (!error) triggerToast('Cagnotte mise à jour en direct !');
+  if (!error) triggerToast('Cagnotte et inscrits mis à jour en direct !');
 };
 
 onMounted(async () => {
@@ -791,7 +998,7 @@ onMounted(async () => {
   <div v-else class="min-h-screen bg-slate-100 p-4 sm:p-8">
     <div class="max-w-7xl mx-auto">
       
-      <!-- En-tête avec bouton CHANGER DE COMPTE -->
+      <!-- En-tête -->
       <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-200 flex-wrap gap-4">
         <div>
           <div class="flex items-center gap-3">
@@ -826,9 +1033,9 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= MENU ONGLETS VERT ÉMERAUDE ================= -->
-      <nav class="border-b border-slate-300/80 mb-8 overflow-x-auto">
-        <div class="flex items-center gap-8 -mb-px min-w-max">
+      <!-- ================= BANDEAU D'ONGLETS SANS AUCUNE FLÈCHE ================= -->
+      <nav class="border-b border-slate-300/80 mb-8 overflow-hidden">
+        <div class="flex items-center gap-8 -mb-px flex-wrap">
           
           <button
             v-if="canAccessTab('poles')"
@@ -836,7 +1043,7 @@ onMounted(async () => {
             :class="currentTab === 'poles'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-table-columns text-xs"></i>
             <span>Tableau Kanban</span>
@@ -848,7 +1055,7 @@ onMounted(async () => {
             :class="currentTab === 'materiel'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-boxes-stacked text-xs"></i>
             <span>Besoins Matériel ({{ filteredMaterialRequests.length }})</span>
@@ -860,7 +1067,7 @@ onMounted(async () => {
             :class="currentTab === 'budget_tresorerie'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
             <span>Budget & Pôles</span>
@@ -872,7 +1079,7 @@ onMounted(async () => {
             :class="currentTab === 'messages'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-regular fa-envelope text-xs"></i>
             <span>Messages ({{ messages.length }})</span>
@@ -884,7 +1091,7 @@ onMounted(async () => {
             :class="currentTab === 'benevoles'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-users text-xs"></i>
             <span>Bénévoles ({{ volunteers.length }})</span>
@@ -896,7 +1103,7 @@ onMounted(async () => {
             :class="currentTab === 'faq'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-regular fa-circle-question text-xs"></i>
             <span>FAQ ({{ faqs.length }})</span>
@@ -908,10 +1115,11 @@ onMounted(async () => {
             :class="currentTab === 'sponsors'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-handshake text-xs"></i>
             <span>Sponsors ({{ sponsors.length }})</span>
+            <span v-if="sponsorMaterialRequests.filter(s => s.statut_sponsor === 'en_attente').length > 0" class="w-2 h-2 rounded-full bg-amber-500"></span>
           </button>
 
           <button
@@ -920,7 +1128,7 @@ onMounted(async () => {
             :class="currentTab === 'cagnotte'
               ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
               : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-hand-holding-dollar text-xs"></i>
             <span>Actualiser Cagnotte</span>
@@ -931,9 +1139,8 @@ onMounted(async () => {
 
       <!-- ================= VUE KANBAN ================= -->
       <div v-if="currentTab === 'poles'" class="space-y-6">
-        <!-- SOUS-ONGLETS DES PÔLES KANBAN DANS LE MÊME STYLE ÉMERAUDE -->
-        <div v-if="accessiblePoles.length > 1" class="border-b border-slate-200 mb-6 overflow-x-auto">
-          <div class="flex items-center gap-6 -mb-px min-w-max">
+        <div v-if="accessiblePoles.length > 1" class="border-b border-slate-200 mb-6 overflow-hidden">
+          <div class="flex items-center gap-6 -mb-px flex-wrap">
             <button 
               v-for="p in accessiblePoles" 
               :key="p.id"
@@ -941,7 +1148,7 @@ onMounted(async () => {
               :class="selectedPole === p.id 
                 ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold' 
                 : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer"
+              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
             >
               <i :class="['fa-solid', p.icon]"></i>
               <span>{{ p.label }}</span>
@@ -990,7 +1197,7 @@ onMounted(async () => {
                 draggable="true"
                 @dragstart="onDragStart($event, task)"
                 @click="openDetail(task)"
-                class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:shadow-md transition cursor-grab active:cursor-grabbing relative group"
+                :class="['bg-white rounded-xl p-4 border-2 shadow-xs hover:shadow-md transition cursor-grab active:cursor-grabbing relative group', task.border_color || 'border-slate-200']"
               >
                 <div class="flex items-start justify-between gap-2 mb-2">
                   <span 
@@ -1062,9 +1269,7 @@ onMounted(async () => {
               <span>{{ isLogistiqueOrDirection ? 'Tableau Central du Matériel (Pôle Logistique)' : 'Besoins Matériel de votre Pôle' }}</span>
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              {{ isLogistiqueOrDirection 
-                ? 'Arbitrage logistique des demandes avec motif obligatoire et consultation des validations budgétaires.' 
-                : 'Consultez les arbitrages de la logistique et de la trésorerie sur vos demandes.' }}
+              Consultez, modifiez vos demandes et suivez les arbitrages logistiques, financiers et sponsors.
             </p>
           </div>
 
@@ -1092,12 +1297,13 @@ onMounted(async () => {
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-4 w-32">Pôle</th>
+                  <th class="p-4 w-28">Pôle</th>
                   <th class="p-4">Commande & Détails (Obligatoire)</th>
-                  <th class="p-4 w-36">Prix indicatif</th>
-                  <th class="p-4 w-44">Avis Logistique</th>
-                  <th class="p-4 w-44">Avis Trésorerie</th>
-                  <th class="p-4 text-right w-16">Actions</th>
+                  <th class="p-4 w-32">Prix indicatif</th>
+                  <th class="p-4 w-40">Avis Logistique</th>
+                  <th class="p-4 w-40">Avis Trésorerie</th>
+                  <th class="p-4 w-36">Sponsors</th>
+                  <th class="p-4 text-right w-24">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
@@ -1165,23 +1371,56 @@ onMounted(async () => {
                       <p v-if="item.reponse_tresorerie" class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200/60 italic leading-snug">
                         « {{ item.reponse_tresorerie }} »
                       </p>
-                      <span v-else class="text-[11px] text-slate-400 italic block">En attente d'arbitrage</span>
+                      <span v-else class="text-[11px] text-slate-400 italic block">En attente</span>
                     </div>
                   </td>
 
-                  <td class="p-4 text-right whitespace-nowrap align-top">
+                  <!-- DÉLÉGATION SPONSOR -->
+                  <td class="p-4 align-top">
+                    <div v-if="item.demande_sponsor">
+                      <span v-if="item.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 inline-block">
+                        <i class="fa-solid fa-check mr-1"></i>Sponsor trouvé
+                      </span>
+                      <span v-else-if="item.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200 inline-block">
+                        <i class="fa-solid fa-xmark mr-1"></i>Refusé Sponsor
+                      </span>
+                      <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 inline-block">
+                        <i class="fa-solid fa-clock mr-1"></i>En négociation
+                      </span>
+                    </div>
                     <button 
-                      @click="deleteMaterialRequest(item.id)" 
-                      class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
-                      title="Supprimer la demande"
+                      v-else
+                      @click="askSponsorsForMaterial(item)"
+                      class="px-2 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                      title="Demander au pôle sponsor de trouver une entreprise partenaire"
                     >
-                      <i class="fa-solid fa-trash text-xs"></i>
+                      <i class="fa-solid fa-handshake"></i>
+                      <span>Déléguer</span>
                     </button>
+                  </td>
+
+                  <td class="p-4 text-right whitespace-nowrap align-top">
+                    <div class="flex items-center justify-end gap-1.5">
+                      <button 
+                        @click="openEditMaterialModal(item)"
+                        class="text-slate-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+                        title="Modifier cette ligne"
+                      >
+                        <i class="fa-solid fa-pen text-xs"></i>
+                      </button>
+                      <button 
+                        @click="deleteMaterialRequest(item.id)" 
+                        class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                        title="Supprimer la demande"
+                      >
+                        <i class="fa-solid fa-trash text-xs"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
 
                 <tr v-if="filteredMaterialRequests.length === 0">
-                  <td colspan="6" class="p-10 text-center text-slate-400 italic text-xs">
+                  <td colspan="7" class="p-10 text-center text-slate-400 italic text-xs">
                     Aucune demande de matériel enregistrée pour le moment.
                   </td>
                 </tr>
@@ -1191,7 +1430,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE ================= -->
+      <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE (DESIGN IDENTIQUE) ================= -->
       <div v-if="currentTab === 'budget_tresorerie' && canAccessTab('budget_tresorerie')" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -1200,7 +1439,7 @@ onMounted(async () => {
               <span>Budget Matériel & Arbitrage Trésorerie</span>
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              Validez ou refusez les dépenses demandées avec justification obligatoire.
+              Consultez, modifiez les montants et arbitrez les dépenses demandées.
             </p>
           </div>
 
@@ -1242,67 +1481,266 @@ onMounted(async () => {
 
         <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Demandes de matériel à arbitrer</span>
+            <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Demandes de dépenses et arbitrage financier</span>
             <span class="text-xs font-semibold text-slate-500">Total estimé : <strong class="text-emerald-700 font-mono">{{ totalEstimatedBudget.toFixed(2) }} €</strong></span>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
               <thead>
-                <tr class="bg-slate-50/50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-3.5">Pôle</th>
-                  <th class="p-3.5">Article & Qté</th>
-                  <th class="p-3.5">Prix Unit.</th>
-                  <th class="p-3.5">Total Estimé</th>
-                  <th class="p-3.5">Justification du besoin</th>
-                  <th class="p-3.5">Avis Logistique</th>
-                  <th class="p-3.5">Décision Trésorerie</th>
-                  <th class="p-3.5 text-right">Action</th>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                  <th class="p-4 w-28">Pôle</th>
+                  <th class="p-4">Commande & Détails (Obligatoire)</th>
+                  <th class="p-4 w-32">Prix indicatif</th>
+                  <th class="p-4 w-40">Avis Logistique</th>
+                  <th class="p-4 w-40">Avis Trésorerie</th>
+                  <th class="p-4 w-36">Sponsors</th>
+                  <th class="p-4 text-right w-24">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-for="item in materialRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
-                  <td class="p-3.5 font-bold uppercase text-[11px] text-slate-700 align-top">{{ item.pole }}</td>
-                  <td class="p-3.5 font-extrabold text-slate-900 align-top">
-                    {{ item.article }} <span class="font-mono font-bold text-slate-500 text-xs">(x{{ item.quantite }})</span>
-                  </td>
-                  <td class="p-3.5 font-mono text-slate-700 align-top">
-                    {{ item.estimated_price ? `${Number(item.estimated_price).toFixed(2)} €` : '—' }}
-                  </td>
-                  <td class="p-3.5 font-mono font-bold text-emerald-800 align-top">
-                    {{ item.estimated_price ? `${(Number(item.estimated_price) * item.quantite).toFixed(2)} €` : '0.00 €' }}
-                  </td>
-                  <td class="p-3.5 text-slate-600 max-w-xs align-top leading-relaxed">
-                    {{ item.details }}
-                  </td>
-                  <td class="p-3.5 align-top">
-                    <span :class="[decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.badge, 'px-2 py-0.5 rounded text-[10px] font-bold border inline-block']">
-                      {{ decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.label }}
+                  <td class="p-4 whitespace-nowrap align-top">
+                    <span class="inline-block px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                      {{ item.pole }}
                     </span>
+                    <div class="text-[10px] text-slate-400 mt-1">Par {{ item.demandeur }}</div>
                   </td>
-                  <td class="p-3.5 align-top">
-                    <div class="space-y-1">
-                      <span :class="[decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.badge, 'px-2.5 py-1 rounded text-[10px] font-bold border inline-block']">
-                        {{ decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.label }}
+
+                  <td class="p-4 align-top">
+                    <div class="flex items-center gap-2 mb-1.5">
+                      <span class="font-black text-slate-900 text-sm">{{ item.article }}</span>
+                      <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-xs font-mono font-bold rounded-full">
+                        x{{ item.quantite }}
                       </span>
-                      <p v-if="item.reponse_tresorerie" class="text-xs text-slate-600 italic leading-snug">
-                        « {{ item.reponse_tresorerie }} »
+                    </div>
+
+                    <div class="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-700 text-xs">
+                      <div class="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                        <i class="fa-solid fa-circle-info text-emerald-600"></i>
+                        <span>Justification du besoin :</span>
+                      </div>
+                      <p class="leading-relaxed whitespace-pre-wrap">{{ item.details }}</p>
+                    </div>
+                  </td>
+
+                  <td class="p-4 whitespace-nowrap align-top">
+                    <div v-if="item.estimated_price !== null && item.estimated_price !== undefined">
+                      <span class="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                        {{ Number(item.estimated_price).toFixed(2) }} € <span class="text-[9px] font-sans font-normal text-slate-500">/u</span>
+                      </span>
+                      <div class="text-[10px] text-slate-500 font-semibold mt-1">
+                        Total : <strong class="text-slate-800 font-mono">{{ (Number(item.estimated_price) * item.quantite).toFixed(2) }} €</strong>
+                      </div>
+                    </div>
+                    <span v-else class="text-slate-400 italic text-[11px]">Non renseigné</span>
+                  </td>
+
+                  <td class="p-4 align-top">
+                    <div class="space-y-1.5">
+                      <span :class="[decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.badge, 'px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block']">
+                        {{ decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.label }}
+                      </span>
+                      <p v-if="item.reponse_logistique" class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200/60 italic leading-snug">
+                        « {{ item.reponse_logistique }} »
                       </p>
                     </div>
                   </td>
-                  <td class="p-3.5 text-right align-top">
-                    <button 
-                      @click="openDecisionModal(item, 'tresorerie')"
-                      class="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 ml-auto"
-                    >
-                      <i class="fa-solid fa-stamp text-[10px]"></i>
-                      <span>Arbitrer</span>
-                    </button>
+
+                  <td class="p-4 align-top">
+                    <div class="space-y-1.5">
+                      <span :class="[decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.badge, 'px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block']">
+                        {{ decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.label }}
+                      </span>
+                      <p v-if="item.reponse_tresorerie" class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200/60 italic leading-snug">
+                        « {{ item.reponse_tresorerie }} »
+                      </p>
+                      <button 
+                        @click="openDecisionModal(item, 'tresorerie')"
+                        class="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
+                      >
+                        <i class="fa-solid fa-stamp text-[10px]"></i>
+                        <span>Arbitrer (Trésorerie)</span>
+                      </button>
+                    </div>
+                  </td>
+
+                  <td class="p-4 align-top">
+                    <div v-if="item.demande_sponsor">
+                      <span v-if="item.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 inline-block">
+                        <i class="fa-solid fa-check mr-1"></i>Sponsor trouvé
+                      </span>
+                      <span v-else-if="item.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200 inline-block">
+                        <i class="fa-solid fa-xmark mr-1"></i>Refusé Sponsor
+                      </span>
+                      <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 inline-block">
+                        <i class="fa-solid fa-clock mr-1"></i>En négociation
+                      </span>
+                    </div>
+                    <span v-else class="text-slate-400 italic text-[11px]">Non délégué</span>
+                  </td>
+
+                  <td class="p-4 text-right whitespace-nowrap align-top">
+                    <div class="flex items-center justify-end gap-1.5">
+                      <button 
+                        @click="openEditMaterialModal(item)"
+                        class="text-slate-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+                        title="Modifier cette ligne"
+                      >
+                        <i class="fa-solid fa-pen text-xs"></i>
+                      </button>
+                      <button 
+                        @click="deleteMaterialRequest(item.id)" 
+                        class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                        title="Supprimer la demande"
+                      >
+                        <i class="fa-solid fa-trash text-xs"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
+      </div>
+
+      <!-- ================= VUE SPONSORS & DEMANDES MATÉRIEL DÉLÉGUÉES ================= -->
+      <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-8">
+        
+        <!-- SECTION : MATÉRIEL DÉLÉGUÉ AUX SPONSORS -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-handshake text-emerald-600"></i>
+                <span>Besoins matériels à faire sponsoriser</span>
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Demandes d'autres pôles nécessitant un partenariat ou don matériel.
+              </p>
+            </div>
+            <span class="px-3 py-1 bg-amber-100 text-amber-900 font-bold rounded-full text-xs">
+              {{ sponsorMaterialRequests.length }} demande(s)
+            </span>
+          </div>
+
+          <div v-if="sponsorMaterialRequests.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+            Aucun matériel n'est actuellement délégué à la recherche de sponsors.
+          </div>
+
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                  <th class="p-3">Pôle</th>
+                  <th class="p-3">Matériel</th>
+                  <th class="p-3">Justification</th>
+                  <th class="p-3">Coût estimé</th>
+                  <th class="p-3">Statut actuel</th>
+                  <th class="p-3 text-right">Arbitrage Sponsors</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="req in sponsorMaterialRequests" :key="req.id">
+                  <td class="p-3 font-bold uppercase text-[11px] text-slate-700">{{ req.pole }}</td>
+                  <td class="p-3 font-extrabold text-slate-900">
+                    {{ req.article }} <span class="text-slate-500 font-mono">(x{{ req.quantite }})</span>
+                  </td>
+                  <td class="p-3 text-slate-600 max-w-xs">{{ req.details }}</td>
+                  <td class="p-3 font-mono font-bold text-emerald-800">
+                    {{ req.estimated_price ? `${(req.estimated_price * req.quantite).toFixed(2)} €` : '—' }}
+                  </td>
+                  <td class="p-3">
+                    <span v-if="req.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                      Pris en charge
+                    </span>
+                    <span v-else-if="req.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200">
+                      Refusé
+                    </span>
+                    <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                      À traiter
+                    </span>
+                  </td>
+                  <td class="p-3 text-right whitespace-nowrap">
+                    <div v-if="req.statut_sponsor === 'en_attente'" class="flex items-center justify-end gap-1.5">
+                      <button 
+                        @click="handleSponsorResponse(req, 'valide')"
+                        class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                        title="Accepter et créer automatiquement un Post-it dans 'À faire'"
+                      >
+                        <i class="fa-solid fa-check"></i>
+                        <span>Prendre en charge</span>
+                      </button>
+                      <button 
+                        @click="handleSponsorResponse(req, 'refuse')"
+                        class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                      >
+                        <i class="fa-solid fa-xmark"></i>
+                        <span>Refuser</span>
+                      </button>
+                    </div>
+                    <span v-else class="text-[11px] text-slate-400 italic">Décision actée</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SECTION : GESTION DES PARTENAIRES DE LA COURSE -->
+        <div class="space-y-4">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-black text-slate-900">Partenaires et Sponsors officiels</h3>
+            <button 
+              @click="openCreateSponsor" 
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-plus"></i>
+              <span>Ajouter un sponsor</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div 
+              v-for="s in sponsors" 
+              :key="s.id" 
+              class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between"
+            >
+              <div class="flex items-start gap-4 mb-4">
+                <div class="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center p-2 flex-shrink-0">
+                  <img v-if="s.logo_url" :src="s.logo_url" :alt="s.nom" class="max-h-full max-w-full object-contain" />
+                  <i v-else class="fa-solid fa-handshake text-xl text-slate-300"></i>
+                </div>
+                <div class="overflow-hidden">
+                  <h4 class="font-bold text-slate-900 text-sm truncate">{{ s.nom }}</h4>
+                  <p class="text-xs text-slate-500 line-clamp-2 mt-0.5">{{ s.description || 'Aucune description' }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button 
+                  @click="openEditSponsor(s)" 
+                  class="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+                >
+                  <i class="fa-solid fa-pen text-[10px]"></i>
+                  <span>Modifier</span>
+                </button>
+                <button 
+                  @click="deleteSponsor(s.id)" 
+                  class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition border border-rose-200 cursor-pointer flex items-center gap-1"
+                >
+                  <i class="fa-solid fa-trash text-[10px]"></i>
+                  <span>Supprimer</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="sponsors.length === 0" class="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
+            Aucun partenaire enregistré.
+          </div>
+        </div>
+
       </div>
 
       <!-- ================= VUE MESSAGES ================= -->
@@ -1450,60 +1888,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE SPONSORS ================= -->
-      <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-4">
-        <div class="flex justify-between items-center">
-          <p class="text-xs text-slate-500">Ajoutez et modifiez les partenaires de la course.</p>
-          <button 
-            @click="openCreateSponsor" 
-            class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
-          >
-            <i class="fa-solid fa-plus"></i>
-            <span>Ajouter un sponsor</span>
-          </button>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div 
-            v-for="s in sponsors" 
-            :key="s.id" 
-            class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between"
-          >
-            <div class="flex items-start gap-4 mb-4">
-              <div class="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center p-2 flex-shrink-0">
-                <img v-if="s.logo_url" :src="s.logo_url" :alt="s.nom" class="max-h-full max-w-full object-contain" />
-                <i v-else class="fa-solid fa-handshake text-xl text-slate-300"></i>
-              </div>
-              <div class="overflow-hidden">
-                <h4 class="font-bold text-slate-900 text-sm truncate">{{ s.nom }}</h4>
-                <p class="text-xs text-slate-500 line-clamp-2 mt-0.5">{{ s.description || 'Aucune description' }}</p>
-              </div>
-            </div>
-
-            <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button 
-                @click="openEditSponsor(s)" 
-                class="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
-              >
-                <i class="fa-solid fa-pen text-[10px]"></i>
-                <span>Modifier</span>
-              </button>
-              <button 
-                @click="deleteSponsor(s.id)" 
-                class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition border border-rose-200 cursor-pointer flex items-center gap-1"
-              >
-                <i class="fa-solid fa-trash text-[10px]"></i>
-                <span>Supprimer</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="sponsors.length === 0" class="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
-          Aucun partenaire enregistré.
-        </div>
-      </div>
-
       <!-- ================= VUE CAGNOTTE ================= -->
       <div v-if="currentTab === 'cagnotte' && canAccessTab('cagnotte')" class="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs max-w-xl">
         <div class="mb-6">
@@ -1536,7 +1920,16 @@ onMounted(async () => {
               class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-emerald-600"
             />
           </div>
-
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre de participants inscrits</label>
+            <input 
+              v-model.number="fundraisingParticipants" 
+              type="number" 
+              min="0"
+              placeholder="Ex. 142"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-emerald-600"
+            />
+          </div>
           <button 
             @click="handleSaveFundraising"
             :disabled="updatingFundraising"
@@ -1633,76 +2026,7 @@ onMounted(async () => {
     </div>
   </div>
 
-  <!-- MODALE D'ARBITRAGE ET JUSTIFICATION -->
-  <div v-if="showDecisionModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
-      <button @click="showDecisionModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
-        <i class="fa-solid fa-xmark"></i>
-      </button>
-
-      <h3 class="text-xl font-black text-slate-900 mb-1">
-        Avis {{ decisionType === 'logistique' ? 'Logistique' : 'Trésorerie' }}
-      </h3>
-      <p class="text-xs text-slate-500 mb-4">
-        Article : <strong class="text-slate-800">{{ decisionTargetItem?.article }} (x{{ decisionTargetItem?.quantite }})</strong> — Pôle {{ decisionTargetItem?.pole }}
-      </p>
-
-      <div class="space-y-4">
-        <div>
-          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Décision</label>
-          <div class="grid grid-cols-3 gap-2">
-            <button 
-              type="button" 
-              @click="decisionForm.status = 'valide'"
-              :class="decisionForm.status === 'valide' ? 'bg-emerald-700 text-white font-bold border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
-              class="py-2 text-xs rounded-xl border transition cursor-pointer"
-            >
-              Validé
-            </button>
-            <button 
-              type="button" 
-              @click="decisionForm.status = 'refuse'"
-              :class="decisionForm.status === 'refuse' ? 'bg-rose-700 text-white font-bold border-rose-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
-              class="py-2 text-xs rounded-xl border transition cursor-pointer"
-            >
-              Refusé
-            </button>
-            <button 
-              type="button" 
-              @click="decisionForm.status = 'en_attente'"
-              :class="decisionForm.status === 'en_attente' ? 'bg-amber-600 text-white font-bold border-amber-600' : 'bg-slate-50 text-slate-700 border-slate-200'"
-              class="py-2 text-xs rounded-xl border transition cursor-pointer"
-            >
-              En attente
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-xs font-bold uppercase text-slate-700 mb-1 flex items-center justify-between">
-            <span>Motif / Commentaire</span>
-            <span v-if="decisionForm.status === 'refuse'" class="text-[10px] text-rose-600 font-bold lowercase">Obligatoire pour un refus</span>
-            <span v-else class="text-[10px] text-slate-400 font-normal lowercase">Facultatif</span>
-          </label>
-          <textarea 
-            v-model="decisionForm.comment" 
-            rows="4" 
-            :placeholder="decisionForm.status === 'refuse' ? 'Indiquez impérativement la raison du refus...' : 'Ajoutez une précision ou une condition éventuelle...'" 
-            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
-          ></textarea>
-        </div>
-
-        <button 
-          @click="saveDecision" 
-          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer"
-        >
-          Valider la décision
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODALE POST-IT (CRÉATION / ÉDITION) -->
+  <!-- MODALE : CRÉATION / ÉDITION DE POST-IT AVEC CHOIX DE COULEUR -->
   <div v-if="showTaskModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
       <button @click="showTaskModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -1716,8 +2040,8 @@ onMounted(async () => {
 
       <div class="space-y-3.5">
         <div>
-          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Titre de l'action</label>
-          <input v-model="taskForm.titre" type="text" placeholder="Ex. Relancer la mairie pour le tracé" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Titre de l'action *</label>
+          <input v-model="taskForm.titre" required type="text" placeholder="Ex. Relancer la mairie pour le tracé" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
         </div>
 
         <div>
@@ -1732,19 +2056,43 @@ onMounted(async () => {
           </select>
         </div>
 
+        <!-- SÉLECTEUR DE COULEUR DE BORDURE -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Couleur du contour</label>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button
+              v-for="color in postItColorOptions"
+              :key="color.id"
+              type="button"
+              @click="taskForm.border_color = color.id"
+              :class="[
+                color.colorClass,
+                taskForm.border_color === color.id ? 'ring-2 ring-emerald-600 ring-offset-2 scale-110' : 'opacity-70 hover:opacity-100',
+                'w-7 h-7 rounded-full border-2 transition transform cursor-pointer'
+              ]"
+              :title="color.label"
+            ></button>
+          </div>
+        </div>
+
         <div>
           <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Description</label>
           <textarea v-model="taskForm.description" rows="3" placeholder="Détails du sujet..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600"></textarea>
         </div>
 
-        <button @click="saveTask" class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-sm transition cursor-pointer mt-2">
-          {{ editingTask ? 'Mettre à jour' : 'Épingler le post-it' }}
+        <button 
+          @click="saveTask" 
+          :disabled="taskSaving"
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-sm transition cursor-pointer mt-2 flex items-center justify-center gap-2 shadow-sm"
+        >
+          <i v-if="taskSaving" class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>{{ editingTask ? 'Mettre à jour le post-it' : 'Épingler le post-it' }}</span>
         </button>
       </div>
     </div>
   </div>
 
-  <!-- MODALE DÉTAIL POST-IT (ÉTAPES & COMMENTAIRES) -->
+  <!-- MODALE DÉTAIL POST-IT -->
   <div v-if="showDetailModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl relative flex flex-col max-h-[90vh]">
       <button @click="showDetailModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -1860,7 +2208,153 @@ onMounted(async () => {
     </div>
   </div>
 
-  <!-- MODALE DEMANDE DE MATÉRIEL -->
+  <!-- MODALE MODIFICATION D'UNE DEMANDE EXISTANTE -->
+  <div v-if="showEditMaterialModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
+      <button @click="showEditMaterialModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <h3 class="text-xl font-black text-slate-900 mb-1">Modifier la demande</h3>
+      <p class="text-xs text-slate-500 mb-4">Corrigez l'article, la quantité, le prix estimé ou la justification.</p>
+
+      <div class="space-y-3.5">
+        <div v-if="isDirection">
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Pôle concerné</label>
+          <select v-model="editMaterialForm.pole" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-600 bg-white">
+            <option v-for="p in allPoles" :key="p.id" :value="p.id">{{ p.label }}</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Article / Matériel *</label>
+          <input 
+            v-model="editMaterialForm.article" 
+            type="text" 
+            required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Quantité *</label>
+            <input 
+              v-model.number="editMaterialForm.quantite" 
+              type="number" 
+              min="1" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">
+              Prix unit. (€) <span class="text-[9px] text-slate-400 font-normal lowercase">(option)</span>
+            </label>
+            <input 
+              v-model.number="editMaterialForm.estimated_price" 
+              type="number" 
+              step="0.01" 
+              min="0" 
+              placeholder="0.00" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1 flex items-center justify-between">
+            <span>Justification du besoin *</span>
+            <span class="text-[10px] text-rose-600 font-bold lowercase">Obligatoire</span>
+          </label>
+          <textarea 
+            v-model="editMaterialForm.details" 
+            rows="3" 
+            required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+          ></textarea>
+        </div>
+
+        <button 
+          @click="saveEditedMaterial" 
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer mt-2"
+        >
+          Enregistrer les modifications
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE D'ARBITRAGE ET JUSTIFICATION -->
+  <div v-if="showDecisionModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
+      <button @click="showDecisionModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <h3 class="text-xl font-black text-slate-900 mb-1">
+        Avis {{ decisionType === 'logistique' ? 'Logistique' : 'Trésorerie' }}
+      </h3>
+      <p class="text-xs text-slate-500 mb-4">
+        Article : <strong class="text-slate-800">{{ decisionTargetItem?.article }} (x{{ decisionTargetItem?.quantite }})</strong> — Pôle {{ decisionTargetItem?.pole }}
+      </p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Décision</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button 
+              type="button" 
+              @click="decisionForm.status = 'valide'"
+              :class="decisionForm.status === 'valide' ? 'bg-emerald-700 text-white font-bold border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 text-xs rounded-xl border transition cursor-pointer"
+            >
+              Validé
+            </button>
+            <button 
+              type="button" 
+              @click="decisionForm.status = 'refuse'"
+              :class="decisionForm.status === 'refuse' ? 'bg-rose-700 text-white font-bold border-rose-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 text-xs rounded-xl border transition cursor-pointer"
+            >
+              Refusé
+            </button>
+            <button 
+              type="button" 
+              @click="decisionForm.status = 'en_attente'"
+              :class="decisionForm.status === 'en_attente' ? 'bg-amber-600 text-white font-bold border-amber-600' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 text-xs rounded-xl border transition cursor-pointer"
+            >
+              En attente
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1 flex items-center justify-between">
+            <span>Motif / Commentaire</span>
+            <span v-if="decisionForm.status === 'refuse'" class="text-[10px] text-rose-600 font-bold lowercase">Obligatoire pour un refus</span>
+            <span v-else class="text-[10px] text-slate-400 font-normal lowercase">Facultatif</span>
+          </label>
+          <textarea 
+            v-model="decisionForm.comment" 
+            rows="4" 
+            :placeholder="decisionForm.status === 'refuse' ? 'Indiquez impérativement la raison du refus...' : 'Ajoutez une précision ou une condition éventuelle...'" 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+          ></textarea>
+        </div>
+
+        <button 
+          @click="saveDecision" 
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+        >
+          Valider la décision
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE DEMANDE MATÉRIEL INITIALE -->
   <div v-if="showMaterialModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
       <button @click="showMaterialModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
@@ -1938,7 +2432,7 @@ onMounted(async () => {
     </div>
   </div>
 
-  <!-- MODALE SPONSOR -->
+  <!-- MODALE CRÉATION SPONSOR -->
   <div v-if="showSponsorModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative">
       <button @click="showSponsorModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
