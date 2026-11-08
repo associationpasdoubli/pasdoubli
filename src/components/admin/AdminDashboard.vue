@@ -13,6 +13,7 @@ const loginEmail = ref('');
 const loginPassword = ref('');
 const loginError = ref('');
 
+// Modale changement de compte rapide
 const showSwitchAccountModal = ref(false);
 
 const directionEmails = [
@@ -61,11 +62,12 @@ const accessiblePoles = computed(() => {
 
 const selectedPole = ref('communication');
 
+// Contrôle strict des onglets
 const canAccessTab = (tab) => {
   if (isDirection.value) return true;
   const r = currentRole.value;
   if (tab === 'poles') return accessiblePoles.value.length > 0;
-  if (tab === 'materiel') return r !== 'tresorerie';
+  if (tab === 'materiel') return r !== 'tresorerie'; // La trésorerie n'a pas accès au tableau opérationnel logistique
   if (tab === 'budget_tresorerie') return r === 'tresorerie';
   if (tab === 'messages') return r === 'communication';
   if (tab === 'benevoles') return r === 'communication';
@@ -93,12 +95,13 @@ const steps = ref([]);
 const comments = ref([]);
 
 const columns = [
-  { id: 'sujet', label: 'Sujet / Idée', textCol: 'text-slate-800' },
-  { id: 'a_faire', label: 'À faire', textCol: 'text-amber-800' },
-  { id: 'en_cours', label: 'En cours', textCol: 'text-blue-800' },
-  { id: 'fait', label: 'Fait', textCol: 'text-emerald-800' }
+  { id: 'sujet', label: 'Sujet / Idée', bgHeader: 'text-emerald-900 border-emerald-900' },
+  { id: 'a_faire', label: 'À faire', bgHeader: 'text-emerald-900 border-emerald-900' },
+  { id: 'en_cours', label: 'En cours', bgHeader: 'text-emerald-900 border-emerald-900' },
+  { id: 'fait', label: 'Fait', bgHeader: 'text-emerald-900 border-emerald-900' }
 ];
 
+// Modales Post-it
 const showTaskModal = ref(false);
 const editingTask = ref(null);
 const taskForm = ref({ titre: '', description: '', assigne_a: '', status: 'sujet' });
@@ -108,10 +111,9 @@ const currentTaskDetail = ref(null);
 const newStepTitle = ref('');
 const newComment = ref('');
 
-// ================= GESTION DU MATÉRIEL & MODALES ================= //
+// ================= GESTION DU MATÉRIEL & ARBITRAGE ================= //
 const materialRequests = ref([]);
 const showMaterialModal = ref(false);
-const editingMaterialRequest = ref(null);
 const materialForm = ref({
   article: '',
   quantite: 1,
@@ -124,12 +126,16 @@ const materialForm = ref({
 const showDecisionModal = ref(false);
 const decisionTargetItem = ref(null);
 const decisionType = ref('logistique');
-const decisionForm = ref({ status: 'valide', comment: '' });
+const decisionForm = ref({
+  status: 'valide',
+  comment: ''
+});
 
-// Modale Suppression avec justification pour Trésorerie
-const showDeleteReasonModal = ref(false);
-const itemToDelete = ref(null);
-const deleteReasonInput = ref('');
+const decisionStatusList = [
+  { id: 'en_attente', label: 'En attente', badge: 'bg-amber-100 text-amber-900 border-amber-200' },
+  { id: 'valide', label: 'Validé', badge: 'bg-emerald-100 text-emerald-900 border-emerald-200' },
+  { id: 'refuse', label: 'Refusé', badge: 'bg-rose-100 text-rose-900 border-rose-200' }
+];
 
 const isLogistiqueOrDirection = computed(() => isDirection.value || currentRole.value === 'logistique');
 const isTresorerieOrDirection = computed(() => isDirection.value || currentRole.value === 'tresorerie');
@@ -139,6 +145,7 @@ const filteredMaterialRequests = computed(() => {
   return materialRequests.value.filter(m => m.pole === currentRole.value);
 });
 
+// Totaux Trésorerie
 const totalEstimatedBudget = computed(() => {
   return materialRequests.value.reduce((acc, item) => {
     if (item.estimated_price !== null && item.estimated_price !== undefined) {
@@ -170,26 +177,14 @@ const budgetSummaryByPole = computed(() => {
   return Object.values(summary).filter(s => s.count > 0);
 });
 
-const getStatusColorClass = (status) => {
-  if (status === 'valide') return 'text-emerald-700 font-bold';
-  if (status === 'refuse') return 'text-rose-600 font-bold';
-  return 'text-amber-600 font-medium';
-};
-
-const getStatusLabel = (status) => {
-  if (status === 'valide') return 'Validé';
-  if (status === 'refuse') return 'Refusé';
-  return 'En attente';
-};
-
-// ================= EXPORTS EXCEL SANS DOUBLONS ================= //
+// ================= EXPORTS EXCEL (.CSV SANS DOUBLONS) ================= //
 const exportToExcel = (type = 'logistique') => {
   let csvContent = '\uFEFF';
   let filename = '';
 
   if (type === 'logistique') {
     filename = `demandes_materiel_logistique_${new Date().toISOString().slice(0, 10)}.csv`;
-    csvContent += 'Pôle;Article;Quantité;Justification du Besoin;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Avis Logistique;Motif Logistique;Avis Trésorerie;Date\n';
+    csvContent += 'Pôle;Article / Commande;Quantité;Justification du Besoin;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Avis Logistique;Motif Logistique;Avis Trésorerie;Date\n';
 
     filteredMaterialRequests.value.forEach(req => {
       const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
@@ -199,9 +194,9 @@ const exportToExcel = (type = 'logistique') => {
       const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
       const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '';
       const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '';
-      const avisLog = `"${getStatusLabel(req.avis_logistique || req.status)}"`;
+      const avisLog = `"${(decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '').replace(/"/g, '""')}"`;
       const motifLog = `"${(req.reponse_logistique || '').replace(/"/g, '""')}"`;
-      const avisTresor = `"${getStatusLabel(req.avis_tresorerie)}"`;
+      const avisTresor = `"${(decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente').replace(/"/g, '""')}"`;
       const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
 
       csvContent += `${pole};${article};${qte};${details};${demandeur};${prix};${total};${avisLog};${motifLog};${avisTresor};${date}\n`;
@@ -216,9 +211,9 @@ const exportToExcel = (type = 'logistique') => {
       const qte = req.quantite || 1;
       const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '0,00';
       const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '0,00';
-      const avisTresor = `"${getStatusLabel(req.avis_tresorerie)}"`;
+      const avisTresor = `"${(decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente').replace(/"/g, '""')}"`;
       const motifTresor = `"${(req.reponse_tresorerie || '').replace(/"/g, '""')}"`;
-      const avisLog = `"${getStatusLabel(req.avis_logistique || req.status)}"`;
+      const avisLog = `"${(decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '').replace(/"/g, '""')}"`;
       const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
       const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
 
@@ -236,165 +231,33 @@ const exportToExcel = (type = 'logistique') => {
   triggerToast('Export Excel téléchargé !');
 };
 
-// ================= ACTIONS MATÉRIEL & ÉDITION ================= //
-const fetchMaterialRequests = async () => {
-  const { data } = await supabase
-    .from('material_requests')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (data) materialRequests.value = data;
+// Modales FAQ & Sponsors
+const showFaqModal = ref(false);
+const faqForm = ref({ question: '', reponse: '' });
+
+const showSponsorModal = ref(false);
+const editingSponsor = ref(null);
+const sponsorForm = ref({ nom: '', description: '', logo_url: '' });
+
+// Libellés bénévoles
+const availabilityLabels = {
+  jour_j: 'Le jour J (dimanche)',
+  veille: 'La veille (samedi)',
+  les_deux: 'Tout le week-end',
+  avant: 'En amont / Préparation'
 };
 
-const openMaterialRequestModal = (item = null) => {
-  editingMaterialRequest.value = item;
-  if (item) {
-    materialForm.value = {
-      article: item.article,
-      quantite: item.quantite,
-      estimated_price: item.estimated_price,
-      details: item.details,
-      pole: item.pole
-    };
-  } else {
-    materialForm.value = {
-      article: '',
-      quantite: 1,
-      estimated_price: null,
-      details: '',
-      pole: isDirection.value ? selectedPole.value : currentRole.value
-    };
-  }
-  showMaterialModal.value = true;
+const poleLabels = {
+  communication: 'Communication',
+  animation: 'Animation',
+  parcours: 'Parcours',
+  infrastructures: 'Infrastructures',
+  dossards: 'Retrait dossards',
+  sponsor: 'Sponsors',
+  logistique: 'Logistique'
 };
 
-const submitMaterialRequest = async () => {
-  if (!materialForm.value.article || materialForm.value.quantite < 1) {
-    triggerToast('Veuillez préciser l\'article et une quantité valide.');
-    return;
-  }
-
-  if (!materialForm.value.details || !materialForm.value.details.trim()) {
-    triggerToast('La justification du besoin est obligatoire !');
-    return;
-  }
-
-  const payload = {
-    pole: materialForm.value.pole || currentRole.value,
-    article: materialForm.value.article.trim(),
-    quantite: materialForm.value.quantite,
-    estimated_price: (materialForm.value.estimated_price !== null && materialForm.value.estimated_price !== '') 
-      ? Number(materialForm.value.estimated_price) 
-      : null,
-    details: materialForm.value.details.trim()
-  };
-
-  if (editingMaterialRequest.value) {
-    const { error } = await supabase
-      .from('material_requests')
-      .update(payload)
-      .eq('id', editingMaterialRequest.value.id);
-
-    if (!error) {
-      Object.assign(editingMaterialRequest.value, payload);
-      showMaterialModal.value = false;
-      triggerToast('Demande modifiée avec succès.');
-    }
-  } else {
-    payload.demandeur = userRoleTitle.value;
-    payload.status = 'en_attente';
-    payload.avis_logistique = 'en_attente';
-    payload.avis_tresorerie = 'en_attente';
-
-    const { data, error } = await supabase.from('material_requests').insert([payload]).select();
-    if (!error && data) {
-      materialRequests.value.unshift(data[0]);
-      showMaterialModal.value = false;
-      triggerToast('Demande enregistrée.');
-    }
-  }
-};
-
-const openDecisionModal = (item, type) => {
-  decisionTargetItem.value = item;
-  decisionType.value = type;
-
-  if (type === 'logistique') {
-    decisionForm.value = {
-      status: item.avis_logistique || item.status || 'valide',
-      comment: item.reponse_logistique || ''
-    };
-  } else {
-    decisionForm.value = {
-      status: item.avis_tresorerie || 'valide',
-      comment: item.reponse_tresorerie || ''
-    };
-  }
-
-  showDecisionModal.value = true;
-};
-
-const saveDecision = async () => {
-  if (!decisionTargetItem.value) return;
-
-  if (decisionForm.value.status === 'refuse' && (!decisionForm.value.comment || !decisionForm.value.comment.trim())) {
-    triggerToast('Justification obligatoire pour un refus.');
-    return;
-  }
-
-  const updatePayload = {};
-  if (decisionType.value === 'logistique') {
-    updatePayload.avis_logistique = decisionForm.value.status;
-    updatePayload.status = decisionForm.value.status;
-    updatePayload.reponse_logistique = decisionForm.value.comment.trim() || null;
-  } else {
-    updatePayload.avis_tresorerie = decisionForm.value.status;
-    updatePayload.reponse_tresorerie = decisionForm.value.comment.trim() || null;
-  }
-
-  const { error } = await supabase
-    .from('material_requests')
-    .update(updatePayload)
-    .eq('id', decisionTargetItem.value.id);
-
-  if (!error) {
-    Object.assign(decisionTargetItem.value, updatePayload);
-    showDecisionModal.value = false;
-    triggerToast(`Décision ${decisionType.value} enregistrée.`);
-  }
-};
-
-// Suppression avec justification Trésorerie
-const promptDeleteWithReason = (item) => {
-  itemToDelete.value = item;
-  deleteReasonInput.value = '';
-  showDeleteReasonModal.value = true;
-};
-
-const confirmDeleteWithReason = async () => {
-  if (!deleteReasonInput.value.trim()) {
-    triggerToast('Veuillez indiquer la raison de la suppression pour le pôle.');
-    return;
-  }
-
-  // Enregistre l'arbitrage refusé avec le motif avant de supprimer (ou suppression directe)
-  const { error } = await supabase.from('material_requests').delete().eq('id', itemToDelete.value.id);
-  if (!error) {
-    materialRequests.value = materialRequests.value.filter(m => m.id !== itemToDelete.value.id);
-    showDeleteReasonModal.value = false;
-    triggerToast(`Ligne supprimée. Motif notifié : "${deleteReasonInput.value.trim()}"`);
-  }
-};
-
-const deleteMaterialRequest = async (id) => {
-  if (!confirm('Supprimer cette demande ?')) return;
-  const { error } = await supabase.from('material_requests').delete().eq('id', id);
-  if (!error) {
-    materialRequests.value = materialRequests.value.filter(m => m.id !== id);
-    triggerToast('Demande supprimée.');
-  }
-};
-
-// ================= AUTHENTIFICATION & CYCLE DE VIE ================= //
+// ================= AUTHENTIFICATION & DONNÉES ================= //
 const handleLogin = async () => {
   loginError.value = '';
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -437,7 +300,17 @@ const fetchProfileAndData = async () => {
       .eq('id', user.value.id)
       .maybeSingle();
 
-    if (prof) userProfile.value = prof;
+    if (prof) {
+      userProfile.value = prof;
+    } else {
+      const em = user.value.email.toLowerCase();
+      if (em.includes('com')) userProfile.value = { role: 'communication' };
+      else if (em.includes('sponsor')) userProfile.value = { role: 'sponsor' };
+      else if (em.includes('tresor')) userProfile.value = { role: 'tresorerie' };
+      else if (em.includes('logist')) userProfile.value = { role: 'logistique' };
+      else if (em.includes('anim')) userProfile.value = { role: 'animation' };
+      else if (em.includes('parcours')) userProfile.value = { role: 'parcours' };
+    }
   }
 
   if (accessiblePoles.value.length > 0) {
@@ -451,6 +324,34 @@ const fetchProfileAndData = async () => {
 const loadPermittedData = async () => {
   loadPoleData();
   fetchMaterialRequests();
+
+  if (canAccessTab('messages')) {
+    const { data } = await supabase.from('messages').select('*').order('id', { ascending: false });
+    if (data) messages.value = data;
+  }
+
+  if (canAccessTab('benevoles')) {
+    const { data } = await supabase.from('volunteers').select('*').order('id', { ascending: false });
+    if (data) volunteers.value = data;
+  }
+
+  if (canAccessTab('faq')) {
+    const { data } = await supabase.from('faqs').select('*').order('id', { ascending: false });
+    if (data) faqs.value = data;
+  }
+
+  if (canAccessTab('sponsors')) {
+    const { data } = await supabase.from('sponsors').select('*').order('id', { ascending: true });
+    if (data) sponsors.value = data;
+  }
+
+  if (canAccessTab('cagnotte')) {
+    const { data } = await supabase.from('fundraising').select('*').eq('id', 1).maybeSingle();
+    if (data) {
+      fundraisingCurrent.value = data.current_amount;
+      fundraisingGoal.value = data.goal_amount;
+    }
+  }
 };
 
 const loadPoleData = async () => {
@@ -464,14 +365,20 @@ const loadPoleData = async () => {
   if (commentsData) comments.value = commentsData;
 };
 
-// Kanban actions
-const tasksByStatus = (status) => tasks.value.filter(t => t.pole === selectedPole.value && t.status === status);
+// ================= GESTION DU KANBAN ================= //
+const tasksByStatus = (status) => {
+  return tasks.value.filter(t => t.pole === selectedPole.value && t.status === status);
+};
 
 const getTaskProgress = (taskId) => {
   const taskSteps = steps.value.filter(s => s.task_id === taskId);
   if (taskSteps.length === 0) return null;
   const done = taskSteps.filter(s => s.completed).length;
-  return { done, total: taskSteps.length, percent: Math.round((done / taskSteps.length) * 100) };
+  return {
+    done,
+    total: taskSteps.length,
+    percent: Math.round((done / taskSteps.length) * 100)
+  };
 };
 
 const openCreateTask = (status = 'sujet') => {
@@ -482,22 +389,35 @@ const openCreateTask = (status = 'sujet') => {
 
 const openEditTask = (task) => {
   editingTask.value = task;
-  taskForm.value = { titre: task.titre, description: task.description || '', assigne_a: task.assigne_a || '', status: task.status };
+  taskForm.value = {
+    titre: task.titre,
+    description: task.description || '',
+    assigne_a: task.assigne_a || '',
+    status: task.status
+  };
   showTaskModal.value = true;
 };
 
 const saveTask = async () => {
   if (!taskForm.value.titre) return;
+
   if (editingTask.value) {
     const { error } = await supabase.from('pole_tasks').update(taskForm.value).eq('id', editingTask.value.id);
     if (!error) {
       const idx = tasks.value.findIndex(t => t.id === editingTask.value.id);
       if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], ...taskForm.value };
+      if (currentTaskDetail.value?.id === editingTask.value.id) {
+        currentTaskDetail.value = { ...currentTaskDetail.value, ...taskForm.value };
+      }
       showTaskModal.value = false;
       triggerToast('Post-it mis à jour.');
     }
   } else {
-    const { data, error } = await supabase.from('pole_tasks').insert([{ ...taskForm.value, pole: selectedPole.value }]).select();
+    const { data, error } = await supabase
+      .from('pole_tasks')
+      .insert([{ ...taskForm.value, pole: selectedPole.value }])
+      .select();
+
     if (!error && data) {
       tasks.value.push(data[0]);
       showTaskModal.value = false;
@@ -510,151 +430,541 @@ const deleteTask = async (taskId) => {
   const { error } = await supabase.from('pole_tasks').delete().eq('id', taskId);
   if (!error) {
     tasks.value = tasks.value.filter(t => t.id !== taskId);
+    steps.value = steps.value.filter(s => s.task_id !== taskId);
+    comments.value = comments.value.filter(c => c.task_id !== taskId);
+    if (currentTaskDetail.value?.id === taskId) showDetailModal.value = false;
     triggerToast('Post-it supprimé.');
   }
 };
 
-const onDragStart = (event, task) => event.dataTransfer.setData('taskId', task.id.toString());
+const onDragStart = (event, task) => {
+  event.dataTransfer.setData('taskId', task.id.toString());
+};
 
 const onDrop = async (event, newStatus) => {
   const taskId = event.dataTransfer.getData('taskId');
   if (!taskId) return;
+
   const task = tasks.value.find(t => t.id == taskId);
   if (task && task.status !== newStatus) {
     task.status = newStatus;
     await supabase.from('pole_tasks').update({ status: newStatus }).eq('id', taskId);
-    triggerToast('Post-it déplacé.');
+    triggerToast(`Post-it déplacé vers "${columns.find(c => c.id === newStatus).label}"`);
   }
+};
+
+// ================= ÉTAPES ÉVOLUTIVES & COMMENTAIRES POST-IT ================= //
+const openDetail = (task) => {
+  currentTaskDetail.value = task;
+  newStepTitle.value = '';
+  newComment.value = '';
+  showDetailModal.value = true;
+};
+
+const currentTaskSteps = computed(() => {
+  if (!currentTaskDetail.value) return [];
+  return steps.value.filter(s => s.task_id === currentTaskDetail.value.id);
+});
+
+const currentTaskComments = computed(() => {
+  if (!currentTaskDetail.value) return [];
+  return comments.value.filter(c => c.task_id === currentTaskDetail.value.id);
+});
+
+const addStep = async () => {
+  if (!newStepTitle.value.trim() || !currentTaskDetail.value) return;
+
+  const payload = {
+    task_id: currentTaskDetail.value.id,
+    titre: newStepTitle.value.trim(),
+    completed: false
+  };
+
+  const { data, error } = await supabase.from('pole_task_steps').insert([payload]).select();
+  if (!error && data) {
+    steps.value.push(data[0]);
+    newStepTitle.value = '';
+    triggerToast('Étape ajoutée au post-it !');
+  }
+};
+
+const toggleStep = async (step) => {
+  step.completed = !step.completed;
+  await supabase.from('pole_task_steps').update({ completed: step.completed }).eq('id', step.id);
+};
+
+const deleteStep = async (stepId) => {
+  await supabase.from('pole_task_steps').delete().eq('id', stepId);
+  steps.value = steps.value.filter(s => s.id !== stepId);
+};
+
+const addComment = async () => {
+  if (!newComment.value.trim() || !currentTaskDetail.value) return;
+
+  const payload = {
+    task_id: currentTaskDetail.value.id,
+    auteur: userRoleTitle.value,
+    commentaire: newComment.value.trim()
+  };
+
+  const { data, error } = await supabase.from('pole_task_comments').insert([payload]).select();
+  if (!error && data) {
+    comments.value.push(data[0]);
+    newComment.value = '';
+    triggerToast('Commentaire ajouté.');
+  }
+};
+
+// ================= GESTION MATÉRIEL & ARBITRAGE ================= //
+const fetchMaterialRequests = async () => {
+  const { data } = await supabase
+    .from('material_requests')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (data) materialRequests.value = data;
+};
+
+const openMaterialRequestModal = () => {
+  materialForm.value = {
+    article: '',
+    quantite: 1,
+    estimated_price: null,
+    details: '',
+    pole: isDirection.value ? selectedPole.value : currentRole.value
+  };
+  showMaterialModal.value = true;
+};
+
+const submitMaterialRequest = async () => {
+  if (!materialForm.value.article || materialForm.value.quantite < 1) {
+    triggerToast('Veuillez renseigner un article et une quantité valide.');
+    return;
+  }
+
+  if (!materialForm.value.details || !materialForm.value.details.trim()) {
+    triggerToast('La justification du besoin est obligatoire !');
+    return;
+  }
+
+  const payload = {
+    pole: materialForm.value.pole || currentRole.value,
+    demandeur: userRoleTitle.value,
+    article: materialForm.value.article.trim(),
+    quantite: materialForm.value.quantite,
+    estimated_price: (materialForm.value.estimated_price !== null && materialForm.value.estimated_price !== '') 
+      ? Number(materialForm.value.estimated_price) 
+      : null,
+    details: materialForm.value.details.trim(),
+    status: 'en_attente',
+    avis_logistique: 'en_attente',
+    avis_tresorerie: 'en_attente'
+  };
+
+  const { data, error } = await supabase.from('material_requests').insert([payload]).select();
+  if (!error && data) {
+    materialRequests.value.unshift(data[0]);
+    showMaterialModal.value = false;
+    triggerToast('Demande enregistrée avec succès !');
+  } else if (error) {
+    triggerToast('Erreur lors de l’envoi de la demande.');
+    console.error(error);
+  }
+};
+
+const openDecisionModal = (item, type) => {
+  decisionTargetItem.value = item;
+  decisionType.value = type;
+
+  if (type === 'logistique') {
+    decisionForm.value = {
+      status: item.avis_logistique || item.status || 'valide',
+      comment: item.reponse_logistique || ''
+    };
+  } else {
+    decisionForm.value = {
+      status: item.avis_tresorerie || 'valide',
+      comment: item.reponse_tresorerie || ''
+    };
+  }
+
+  showDecisionModal.value = true;
+};
+
+const saveDecision = async () => {
+  if (!decisionTargetItem.value) return;
+
+  if (decisionForm.value.status === 'refuse' && (!decisionForm.value.comment || !decisionForm.value.comment.trim())) {
+    triggerToast('Veuillez justifier obligatoirement le refus.');
+    return;
+  }
+
+  const updatePayload = {};
+  if (decisionType.value === 'logistique') {
+    updatePayload.avis_logistique = decisionForm.value.status;
+    updatePayload.status = decisionForm.value.status;
+    updatePayload.reponse_logistique = decisionForm.value.comment.trim() || null;
+  } else {
+    updatePayload.avis_tresorerie = decisionForm.value.status;
+    updatePayload.reponse_tresorerie = decisionForm.value.comment.trim() || null;
+  }
+
+  const { error } = await supabase
+    .from('material_requests')
+    .update(updatePayload)
+    .eq('id', decisionTargetItem.value.id);
+
+  if (!error) {
+    Object.assign(decisionTargetItem.value, updatePayload);
+    showDecisionModal.value = false;
+    triggerToast(`Avis ${decisionType.value === 'logistique' ? 'logistique' : 'trésorerie'} enregistré !`);
+  } else {
+    triggerToast('Erreur lors de la mise à jour.');
+    console.error(error);
+  }
+};
+
+const deleteMaterialRequest = async (id) => {
+  const { error } = await supabase.from('material_requests').delete().eq('id', id);
+  if (!error) {
+    materialRequests.value = materialRequests.value.filter(m => m.id !== id);
+    triggerToast('Demande supprimée.');
+  }
+};
+
+// ================= AUTRES ACTIONS ================= //
+const selectMsg = async (msg) => {
+  selectedMessage.value = msg;
+  if (!msg.read) {
+    msg.read = true;
+    await supabase.from('messages').update({ read: true }).eq('id', msg.id);
+  }
+};
+
+const deleteMsg = async (id) => {
+  await supabase.from('messages').delete().eq('id', id);
+  messages.value = messages.value.filter(m => m.id !== id);
+  if (selectedMessage.value?.id === id) selectedMessage.value = null;
+  triggerToast('Message supprimé.');
+};
+
+const openFaqModalFromMessage = (msg) => {
+  faqForm.value = { question: msg.message, reponse: '' };
+  showFaqModal.value = true;
+};
+
+const openManualFaqModal = () => {
+  faqForm.value = { question: '', reponse: '' };
+  showFaqModal.value = true;
+};
+
+const handleSaveFaq = async () => {
+  if (!faqForm.value.question || !faqForm.value.reponse) return;
+  const { data, error } = await supabase.from('faqs').insert([faqForm.value]).select();
+  if (!error && data) {
+    faqs.value.unshift(data[0]);
+    showFaqModal.value = false;
+    faqForm.value = { question: '', reponse: '' };
+    triggerToast('Question publiée sur la FAQ !');
+  }
+};
+
+const deleteFaq = async (id) => {
+  await supabase.from('faqs').delete().eq('id', id);
+  faqs.value = faqs.value.filter(f => f.id !== id);
+  triggerToast('Question supprimée.');
+};
+
+const deleteVolunteer = async (id) => {
+  await supabase.from('volunteers').delete().eq('id', id);
+  volunteers.value = volunteers.value.filter(v => v.id !== id);
+  triggerToast('Candidature retirée.');
+};
+
+const openCreateSponsor = () => {
+  editingSponsor.value = null;
+  sponsorForm.value = { nom: '', description: '', logo_url: '' };
+  showSponsorModal.value = true;
+};
+
+const openEditSponsor = (s) => {
+  editingSponsor.value = s;
+  sponsorForm.value = { nom: s.nom, description: s.description || '', logo_url: s.logo_url || '' };
+  showSponsorModal.value = true;
+};
+
+const handleSaveSponsor = async () => {
+  if (!sponsorForm.value.nom) return;
+  if (editingSponsor.value) {
+    const { error } = await supabase.from('sponsors').update(sponsorForm.value).eq('id', editingSponsor.value.id);
+    if (!error) {
+      const idx = sponsors.value.findIndex(s => s.id === editingSponsor.value.id);
+      if (idx !== -1) sponsors.value[idx] = { ...editingSponsor.value, ...sponsorForm.value };
+      showSponsorModal.value = false;
+      triggerToast('Sponsor mis à jour.');
+    }
+  } else {
+    const { data, error } = await supabase.from('sponsors').insert([sponsorForm.value]).select();
+    if (!error && data) {
+      sponsors.value.push(data[0]);
+      showSponsorModal.value = false;
+      triggerToast('Sponsor ajouté.');
+    }
+  }
+};
+
+const deleteSponsor = async (id) => {
+  const { error } = await supabase.from('sponsors').delete().eq('id', id);
+  if (!error) {
+    sponsors.value = sponsors.value.filter(s => s.id !== id);
+    triggerToast('Sponsor supprimé.');
+  }
+};
+
+const handleSaveFundraising = async () => {
+  updatingFundraising.value = true;
+  const { error } = await supabase
+    .from('fundraising')
+    .update({
+      current_amount: Number(fundraisingCurrent.value) || 0,
+      goal_amount: Number(fundraisingGoal.value) || 5000,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', 1);
+
+  updatingFundraising.value = false;
+  if (!error) triggerToast('Cagnotte mise à jour en direct !');
 };
 
 onMounted(async () => {
   const { data } = await supabase.auth.getSession();
   user.value = data.session?.user || null;
   authLoading.value = false;
-  if (user.value) await fetchProfileAndData();
+
+  if (user.value) {
+    await fetchProfileAndData();
+  }
 });
 </script>
-<style scoped>
-nav {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE et Edge */
-}
-nav::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-}
-</style>
+
 <template>
-  <div v-if="authLoading" class="min-h-screen flex items-center justify-center bg-white">
-    <i class="fa-solid fa-circle-notch fa-spin text-2xl text-emerald-600"></i>
+  <div v-if="authLoading" class="min-h-screen flex items-center justify-center bg-slate-100">
+    <i class="fa-solid fa-circle-notch fa-spin text-3xl text-emerald-600"></i>
   </div>
 
-  <!-- AUTHENTIFICATION -->
+  <!-- CONNEXION INITIALE -->
   <div v-else-if="!user" class="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-md w-full p-8 shadow-xl">
+    <div class="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl">
       <div class="text-center mb-6">
-        <h2 class="text-2xl font-bold text-slate-900">Espace Privé</h2>
-        <p class="text-xs text-slate-500 mt-1">Connexion par rôle & pôle</p>
+        <div class="w-14 h-14 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center mx-auto text-2xl mb-3 shadow-xs">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <h2 class="text-2xl font-black text-slate-900">Espace Privé</h2>
+        <p class="text-xs text-slate-500 mt-1">Connexion par rôle & pôle — Pas d'oubli 2027</p>
       </div>
+
       <form @submit.prevent="handleLogin" class="space-y-4">
         <div>
-          <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">E-mail</label>
-          <input v-model="loginEmail" required type="email" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-600" />
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">E-mail</label>
+          <input v-model="loginEmail" required type="email" placeholder="votre-pole@pasdoubli.fr" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-emerald-600 outline-none" />
         </div>
         <div>
-          <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Mot de passe</label>
-          <input v-model="loginPassword" required type="password" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-emerald-600" />
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Mot de passe</label>
+          <input v-model="loginPassword" required type="password" placeholder="••••••••" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-emerald-600 outline-none" />
         </div>
-        <p v-if="loginError" class="text-xs text-rose-600">{{ loginError }}</p>
-        <button type="submit" class="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-sm transition">
+        
+        <p v-if="loginError" class="text-xs text-rose-600 font-semibold text-center">{{ loginError }}</p>
+
+        <button type="submit" class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-sm transition cursor-pointer shadow-md">
           Se connecter
         </button>
       </form>
+
+      <div class="mt-6 text-center">
+        <a href="/" class="text-xs font-semibold text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-arrow-left mr-1"></i>Retour au site public
+        </a>
+      </div>
     </div>
   </div>
 
-  <!-- APPLICATION CONNECTÉE -->
-  <div v-else class="min-h-screen bg-white p-6 sm:p-10 text-slate-800">
+  <!-- TABLEAU DE BORD CONNECTÉ -->
+  <div v-else class="min-h-screen bg-slate-100 p-4 sm:p-8">
     <div class="max-w-7xl mx-auto">
       
-      <!-- En-tête simplifié -->
-      <div class="flex items-center justify-between pb-6 border-b border-slate-200 mb-6 flex-wrap gap-4">
+      <!-- En-tête avec bouton CHANGER DE COMPTE -->
+      <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-200 flex-wrap gap-4">
         <div>
           <div class="flex items-center gap-3">
             <h1 class="text-2xl font-black text-slate-900">Espace {{ userRoleTitle }}</h1>
-            <span v-if="isDirection" class="text-xs uppercase font-extrabold tracking-wider text-emerald-700">Direction</span>
+            <span 
+              v-if="isDirection" 
+              class="px-3 py-1 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-full shadow-xs flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-crown text-[10px]"></i> Direction
+            </span>
           </div>
-          <p class="text-xs text-slate-500">{{ user.email }}</p>
+          <p class="text-xs text-slate-500 mt-0.5">Connecté sous {{ user.email }}</p>
         </div>
 
-        <div class="flex items-center gap-4 text-xs font-semibold">
-          <button @click="openSwitchAccount" class="text-slate-600 hover:text-emerald-700 transition cursor-pointer">
-            Changer de compte
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <button 
+            @click="openSwitchAccount" 
+            class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Se connecter avec un autre compte ou pôle"
+          >
+            <i class="fa-solid fa-users-gear text-emerald-600"></i>
+            <span>Changer de compte</span>
           </button>
-          <a href="/" class="text-slate-600 hover:text-emerald-700 transition">Voir le site</a>
-          <button @click="handleLogout" class="text-rose-600 hover:underline transition cursor-pointer">Déconnexion</button>
+
+          <a href="/" class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs">
+            <i class="fa-solid fa-globe text-emerald-600"></i>Voir le site
+          </a>
+
+          <button @click="handleLogout" class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs">
+            <i class="fa-solid fa-right-from-bracket mr-1.5"></i>Déconnexion
+          </button>
         </div>
       </div>
 
-      <!-- BARRE D'ONGLETS ÉPURÉE (Sans flèches ni barre de défilement) -->
-<nav class="border-b border-slate-200 mb-8 overflow-hidden">
-  <div class="flex items-center gap-8 -mb-px flex-wrap">
-    
-    <button
-      v-if="canAccessTab('poles')"
-      @click="currentTab = 'poles'"
-      :class="currentTab === 'poles'
-        ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-        : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-      class="pb-3 text-sm transition-colors cursor-pointer"
-    >
-      Tableau Kanban
-    </button>
-
-    <!-- Onglet Logistique (exclu Trésorerie) -->
-    <button
-      v-if="canAccessTab('materiel')"
-      @click="currentTab = 'materiel'"
-      :class="currentTab === 'materiel'
-        ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-        : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-      class="pb-3 text-sm transition-colors cursor-pointer"
-    >
-      Besoins Matériel ({{ filteredMaterialRequests.length }})
-    </button>
-
-    <!-- Onglet Trésorerie -->
-    <button
-      v-if="canAccessTab('budget_tresorerie')"
-      @click="currentTab = 'budget_tresorerie'"
-      :class="currentTab === 'budget_tresorerie'
-        ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-        : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-      class="pb-3 text-sm transition-colors cursor-pointer"
-    >
-      Budget & Pôles
-    </button>
-
-  </div>
-</nav>
-
-      <!-- ================= 1. VUE KANBAN ================= -->
-      <div v-if="currentTab === 'poles'" class="space-y-6">
-        <div v-if="accessiblePoles.length > 1" class="border-b border-slate-100 pb-3 flex items-center gap-6 overflow-x-auto text-xs">
-          <button 
-            v-for="p in accessiblePoles" 
-            :key="p.id"
-            @click="selectedPole = p.id"
-            :class="selectedPole === p.id ? 'text-emerald-700 font-bold' : 'text-slate-400 hover:text-slate-700'"
-            class="transition cursor-pointer"
+      <!-- ================= MENU ONGLETS VERT ÉMERAUDE ================= -->
+      <nav class="border-b border-slate-300/80 mb-8 overflow-x-auto">
+        <div class="flex items-center gap-8 -mb-px min-w-max">
+          
+          <button
+            v-if="canAccessTab('poles')"
+            @click="currentTab = 'poles'"
+            :class="currentTab === 'poles'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
           >
-            {{ p.label }} ({{ tasks.filter(t => t.pole === p.id).length }})
+            <i class="fa-solid fa-table-columns text-xs"></i>
+            <span>Tableau Kanban</span>
           </button>
+
+          <button
+            v-if="canAccessTab('materiel')"
+            @click="currentTab = 'materiel'"
+            :class="currentTab === 'materiel'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-solid fa-boxes-stacked text-xs"></i>
+            <span>Besoins Matériel ({{ filteredMaterialRequests.length }})</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('budget_tresorerie')"
+            @click="currentTab = 'budget_tresorerie'"
+            :class="currentTab === 'budget_tresorerie'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
+            <span>Budget & Pôles</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('messages')"
+            @click="currentTab = 'messages'"
+            :class="currentTab === 'messages'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-regular fa-envelope text-xs"></i>
+            <span>Messages ({{ messages.length }})</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('benevoles')"
+            @click="currentTab = 'benevoles'"
+            :class="currentTab === 'benevoles'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-solid fa-users text-xs"></i>
+            <span>Bénévoles ({{ volunteers.length }})</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('faq')"
+            @click="currentTab = 'faq'"
+            :class="currentTab === 'faq'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-regular fa-circle-question text-xs"></i>
+            <span>FAQ ({{ faqs.length }})</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('sponsors')"
+            @click="currentTab = 'sponsors'"
+            :class="currentTab === 'sponsors'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-solid fa-handshake text-xs"></i>
+            <span>Sponsors ({{ sponsors.length }})</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('cagnotte')"
+            @click="currentTab = 'cagnotte'"
+            :class="currentTab === 'cagnotte'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-solid fa-hand-holding-dollar text-xs"></i>
+            <span>Actualiser Cagnotte</span>
+          </button>
+
+        </div>
+      </nav>
+
+      <!-- ================= VUE KANBAN ================= -->
+      <div v-if="currentTab === 'poles'" class="space-y-6">
+        <!-- SOUS-ONGLETS DES PÔLES KANBAN DANS LE MÊME STYLE ÉMERAUDE -->
+        <div v-if="accessiblePoles.length > 1" class="border-b border-slate-200 mb-6 overflow-x-auto">
+          <div class="flex items-center gap-6 -mb-px min-w-max">
+            <button 
+              v-for="p in accessiblePoles" 
+              :key="p.id"
+              @click="selectedPole = p.id"
+              :class="selectedPole === p.id 
+                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold' 
+                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer"
+            >
+              <i :class="['fa-solid', p.icon]"></i>
+              <span>{{ p.label }}</span>
+              <span class="text-[10px] px-1.5 py-0.2 rounded-full" :class="selectedPole === p.id ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'">
+                {{ tasks.filter(t => t.pole === p.id).length }}
+              </span>
+            </button>
+          </div>
         </div>
 
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-bold text-slate-800">Pôle {{ allPoles.find(p => p.id === selectedPole)?.label }}</h2>
-          <button @click="openCreateTask('sujet')" class="text-xs font-bold text-emerald-700 hover:text-emerald-800 transition cursor-pointer">
-            + Nouveau Post-it
+          <div>
+            <h2 class="text-xl font-black text-slate-900 capitalize flex items-center gap-2">
+              <span>Pôle {{ allPoles.find(p => p.id === selectedPole)?.label }}</span>
+            </h2>
+            <p class="text-xs text-slate-500">Cliquez sur un post-it pour ajouter ou cocher ses étapes.</p>
+          </div>
+          <button 
+            @click="openCreateTask('sujet')"
+            class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
+          >
+            <i class="fa-solid fa-plus"></i>
+            <span>Nouveau Post-it</span>
           </button>
         </div>
 
@@ -664,11 +974,13 @@ nav::-webkit-scrollbar {
             :key="col.id"
             @dragover.prevent
             @drop="onDrop($event, col.id)"
-            class="bg-slate-50 p-4 rounded-xl min-h-[460px] flex flex-col"
+            class="bg-slate-200/60 rounded-2xl p-3 border border-slate-300/80 min-h-[480px] flex flex-col"
           >
-            <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
-              <span :class="['text-xs font-bold uppercase tracking-wider', col.textCol]">{{ col.label }}</span>
-              <span class="text-xs text-slate-400 font-mono">{{ tasksByStatus(col.id).length }}</span>
+            <div :class="['px-3 py-2 rounded-xl font-black text-xs flex items-center justify-between mb-3 border shadow-2xs', col.bgHeader]">
+              <span>{{ col.label }}</span>
+              <span class="bg-white/80 px-2 py-0.5 rounded-full text-[10px] font-mono">
+                {{ tasksByStatus(col.id).length }}
+              </span>
             </div>
 
             <div class="space-y-3 flex-1">
@@ -677,314 +989,689 @@ nav::-webkit-scrollbar {
                 :key="task.id"
                 draggable="true"
                 @dragstart="onDragStart($event, task)"
-                class="bg-white p-3.5 rounded-lg border border-slate-200/80 shadow-xs hover:border-emerald-600 transition cursor-grab"
+                @click="openDetail(task)"
+                class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:shadow-md transition cursor-grab active:cursor-grabbing relative group"
               >
-                <div class="flex justify-between items-start gap-2 mb-1">
-                  <span class="text-[11px] font-semibold text-emerald-800">{{ task.assigne_a || 'Non assigné' }}</span>
-                  <div class="flex gap-1 text-[11px] text-slate-400">
-                    <button @click="openEditTask(task)" class="hover:text-emerald-700 cursor-pointer">✎</button>
-                    <button @click="deleteTask(task.id)" class="hover:text-rose-600 cursor-pointer">✕</button>
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <span 
+                    v-if="task.assigne_a" 
+                    class="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200 truncate"
+                  >
+                    <i class="fa-solid fa-user text-[9px] text-emerald-600 mr-1"></i>{{ task.assigne_a }}
+                  </span>
+                  <span v-else class="text-[10px] italic text-slate-400">Non assigné</span>
+
+                  <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                    <button @click.stop="openEditTask(task)" class="p-1 text-slate-400 hover:text-emerald-700 cursor-pointer">
+                      <i class="fa-solid fa-pen text-[11px]"></i>
+                    </button>
+                    <button @click.stop="deleteTask(task.id)" class="p-1 text-slate-400 hover:text-rose-600 cursor-pointer">
+                      <i class="fa-solid fa-trash text-[11px]"></i>
+                    </button>
                   </div>
                 </div>
-                <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ task.titre }}</h4>
-                <p v-if="task.description" class="text-xs text-slate-500 mt-1 line-clamp-2">{{ task.description }}</p>
+
+                <h4 class="font-extrabold text-slate-900 text-sm leading-snug mb-1">{{ task.titre }}</h4>
+                <p v-if="task.description" class="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3">
+                  {{ task.description }}
+                </p>
+
+                <div v-if="getTaskProgress(task.id)" class="mb-3 bg-slate-50 border border-slate-100 rounded-lg p-2">
+                  <div class="flex justify-between items-center text-[10px] font-bold text-slate-600 mb-1">
+                    <span class="flex items-center gap-1">
+                      <i class="fa-solid fa-list-check text-emerald-600 text-[11px]"></i>
+                      Étapes
+                    </span>
+                    <span>{{ getTaskProgress(task.id).done }} / {{ getTaskProgress(task.id).total }}</span>
+                  </div>
+                  <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      class="bg-emerald-600 h-full rounded-full transition-all duration-300"
+                      :style="{ width: `${getTaskProgress(task.id).percent}%` }"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                  <span class="hover:text-emerald-700 font-semibold flex items-center gap-1">
+                    <i class="fa-regular fa-comment-dots text-xs"></i>
+                    <span>{{ comments.filter(c => c.task_id === task.id).length }} avis</span>
+                  </span>
+                  <span class="text-[10px]">{{ new Date(task.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) }}</span>
+                </div>
               </div>
 
-              <button @click="openCreateTask(col.id)" class="w-full py-2 text-xs font-medium text-slate-400 hover:text-emerald-700 transition cursor-pointer">
-                + Ajouter
+              <button 
+                @click="openCreateTask(col.id)"
+                class="w-full py-2 border-2 border-dashed border-slate-300 hover:border-emerald-600 hover:text-emerald-700 text-slate-400 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <i class="fa-solid fa-plus text-[10px]"></i>
+                <span>Ajouter</span>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ================= 2. VUE BESOINS EN MATÉRIEL (LOGISTIQUE) ================= -->
+      <!-- ================= VUE BESOINS EN MATÉRIEL (LOGISTIQUE) ================= -->
       <div v-if="currentTab === 'materiel' && canAccessTab('materiel')" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 class="text-xl font-bold text-slate-900">Demandes de Matériel</h2>
-            <p class="text-xs text-slate-500">Suivi des matériels avec justification obligatoire</p>
+            <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-boxes-packing text-emerald-600"></i>
+              <span>{{ isLogistiqueOrDirection ? 'Tableau Central du Matériel (Pôle Logistique)' : 'Besoins Matériel de votre Pôle' }}</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              {{ isLogistiqueOrDirection 
+                ? 'Arbitrage logistique des demandes avec motif obligatoire et consultation des validations budgétaires.' 
+                : 'Consultez les arbitrages de la logistique et de la trésorerie sur vos demandes.' }}
+            </p>
           </div>
 
-          <div class="flex items-center gap-4 text-xs font-bold">
-            <button @click="exportToExcel('logistique')" class="text-emerald-700 hover:underline cursor-pointer">
-              Exporter en Excel (.csv)
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <button 
+              @click="exportToExcel('logistique')" 
+              class="px-3.5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-2"
+            >
+              <i class="fa-solid fa-file-excel text-sm"></i>
+              <span>Exporter Excel (.csv)</span>
             </button>
-            <button @click="openMaterialRequestModal()" class="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition cursor-pointer">
-              + Demander du matériel
+
+            <button 
+              @click="openMaterialRequestModal"
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
+            >
+              <i class="fa-solid fa-plus"></i>
+              <span>Demander du matériel</span>
             </button>
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr class="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-semibold text-[10px]">
-                <th class="py-3 px-2 w-28">Pôle</th>
-                <th class="py-3 px-2 w-48">Article & Qté</th>
-                <th class="py-3 px-2">Justification du besoin</th>
-                <th class="py-3 px-2 w-28">Prix estimé</th>
-                <th class="py-3 px-2 w-40">Avis Logistique</th>
-                <th class="py-3 px-2 w-32">Avis Trésorerie</th>
-                <th class="py-3 px-2 text-right w-28">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr v-for="item in filteredMaterialRequests" :key="item.id" class="hover:bg-slate-50/50 transition">
-                <!-- Pôle & Demandeur -->
-                <td class="py-3 px-2 align-top">
-                  <span class="font-bold text-slate-800 uppercase text-[11px]">{{ item.pole }}</span>
-                  <div class="text-[10px] text-slate-400">{{ item.demandeur }}</div>
-                </td>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                  <th class="p-4 w-32">Pôle</th>
+                  <th class="p-4">Commande & Détails (Obligatoire)</th>
+                  <th class="p-4 w-36">Prix indicatif</th>
+                  <th class="p-4 w-44">Avis Logistique</th>
+                  <th class="p-4 w-44">Avis Trésorerie</th>
+                  <th class="p-4 text-right w-16">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="item in filteredMaterialRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
+                  <td class="p-4 whitespace-nowrap align-top">
+                    <span class="inline-block px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                      {{ item.pole }}
+                    </span>
+                    <div class="text-[10px] text-slate-400 mt-1">Par {{ item.demandeur }}</div>
+                  </td>
 
-                <!-- Article & Qté -->
-                <td class="py-3 px-2 align-top font-bold text-slate-900">
-                  {{ item.article }} <span class="text-emerald-700 font-mono font-normal">x{{ item.quantite }}</span>
-                </td>
+                  <td class="p-4 align-top">
+                    <div class="flex items-center gap-2 mb-1.5">
+                      <span class="font-black text-slate-900 text-sm">{{ item.article }}</span>
+                      <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-xs font-mono font-bold rounded-full">
+                        x{{ item.quantite }}
+                      </span>
+                    </div>
 
-                <!-- Justification du besoin (colonne dédiée sans encadré lourd) -->
-                <td class="py-3 px-2 align-top text-slate-600 leading-relaxed pr-4">
-                  <p class="whitespace-pre-wrap">{{ item.details }}</p>
-                </td>
+                    <div class="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-700 text-xs">
+                      <div class="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                        <i class="fa-solid fa-circle-info text-emerald-600"></i>
+                        <span>Justification du besoin :</span>
+                      </div>
+                      <p class="leading-relaxed whitespace-pre-wrap">{{ item.details }}</p>
+                    </div>
+                  </td>
 
-                <!-- Prix -->
-                <td class="py-3 px-2 align-top whitespace-nowrap">
-                  <span v-if="item.estimated_price" class="font-mono font-semibold text-slate-800">
-                    {{ (Number(item.estimated_price) * item.quantite).toFixed(2) }} €
-                  </span>
-                  <span v-else class="text-slate-400 italic">Non renseigné</span>
-                </td>
+                  <td class="p-4 whitespace-nowrap align-top">
+                    <div v-if="item.estimated_price !== null && item.estimated_price !== undefined">
+                      <span class="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                        {{ Number(item.estimated_price).toFixed(2) }} € <span class="text-[9px] font-sans font-normal text-slate-500">/u</span>
+                      </span>
+                      <div class="text-[10px] text-slate-500 font-semibold mt-1">
+                        Total : <strong class="text-slate-800 font-mono">{{ (Number(item.estimated_price) * item.quantite).toFixed(2) }} €</strong>
+                      </div>
+                    </div>
+                    <span v-else class="text-slate-400 italic text-[11px]">Non renseigné</span>
+                  </td>
 
-                <!-- Avis Logistique & Motif -->
-                <td class="py-3 px-2 align-top">
-                  <span :class="getStatusColorClass(item.avis_logistique || item.status)">
-                    {{ getStatusLabel(item.avis_logistique || item.status) }}
-                  </span>
-                  <p v-if="item.reponse_logistique" class="text-slate-500 italic text-[11px] mt-0.5">
-                    {{ item.reponse_logistique }}
-                  </p>
-                </td>
+                  <td class="p-4 align-top">
+                    <div class="space-y-1.5">
+                      <span :class="[decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.badge, 'px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block']">
+                        {{ decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.label }}
+                      </span>
+                      <p v-if="item.reponse_logistique" class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200/60 italic leading-snug">
+                        « {{ item.reponse_logistique }} »
+                      </p>
+                      <button 
+                        v-if="isLogistiqueOrDirection"
+                        @click="openDecisionModal(item, 'logistique')"
+                        class="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer flex items-center gap-1 mt-1"
+                      >
+                        <i class="fa-solid fa-stamp text-[10px]"></i>
+                        <span>Arbitrer (Logistique)</span>
+                      </button>
+                    </div>
+                  </td>
 
-                <!-- Avis Trésorerie -->
-                <td class="py-3 px-2 align-top">
-                  <span :class="getStatusColorClass(item.avis_tresorerie)">
-                    {{ getStatusLabel(item.avis_tresorerie) }}
-                  </span>
-                  <p v-if="item.reponse_tresorerie" class="text-slate-500 italic text-[11px] mt-0.5">
-                    {{ item.reponse_tresorerie }}
-                  </p>
-                </td>
+                  <td class="p-4 align-top">
+                    <div class="space-y-1.5">
+                      <span :class="[decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.badge, 'px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block']">
+                        {{ decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.label }}
+                      </span>
+                      <p v-if="item.reponse_tresorerie" class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200/60 italic leading-snug">
+                        « {{ item.reponse_tresorerie }} »
+                      </p>
+                      <span v-else class="text-[11px] text-slate-400 italic block">En attente d'arbitrage</span>
+                    </div>
+                  </td>
 
-                <!-- Actions regroupées (Arbitrage + Modification + Suppression) -->
-                <td class="py-3 px-2 text-right align-top whitespace-nowrap space-x-2">
-                  <button 
-                    v-if="isLogistiqueOrDirection"
-                    @click="openDecisionModal(item, 'logistique')"
-                    class="text-emerald-700 hover:underline font-bold cursor-pointer"
-                    title="Prendre une décision logistique"
-                  >
-                    Arbitrer
-                  </button>
-                  <button 
-                    @click="openMaterialRequestModal(item)" 
-                    class="text-slate-500 hover:text-emerald-700 font-semibold cursor-pointer"
-                    title="Modifier cette ligne"
-                  >
-                    Modifier
-                  </button>
-                  <button 
-                    @click="deleteMaterialRequest(item.id)" 
-                    class="text-slate-400 hover:text-rose-600 cursor-pointer"
-                    title="Supprimer la demande"
-                  >
-                    ✕
-                  </button>
-                </td>
-              </tr>
+                  <td class="p-4 text-right whitespace-nowrap align-top">
+                    <button 
+                      @click="deleteMaterialRequest(item.id)" 
+                      class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                      title="Supprimer la demande"
+                    >
+                      <i class="fa-solid fa-trash text-xs"></i>
+                    </button>
+                  </td>
+                </tr>
 
-              <tr v-if="filteredMaterialRequests.length === 0">
-                <td colspan="7" class="py-8 text-center text-slate-400 italic">
-                  Aucune demande enregistrée.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                <tr v-if="filteredMaterialRequests.length === 0">
+                  <td colspan="6" class="p-10 text-center text-slate-400 italic text-xs">
+                    Aucune demande de matériel enregistrée pour le moment.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <!-- ================= 3. VUE BUDGET & PÔLES (TRÉSORERIE) ================= -->
+      <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE ================= -->
       <div v-if="currentTab === 'budget_tresorerie' && canAccessTab('budget_tresorerie')" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 class="text-xl font-bold text-slate-900">Budget Matériel & Trésorerie</h2>
-            <p class="text-xs text-slate-500">Contrôle des coûts et arbitrage financier par pôle</p>
+            <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-file-invoice-dollar text-emerald-600"></i>
+              <span>Budget Matériel & Arbitrage Trésorerie</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Validez ou refusez les dépenses demandées avec justification obligatoire.
+            </p>
           </div>
 
-          <div class="flex items-center gap-4 text-xs font-bold">
-            <button @click="exportToExcel('tresorerie')" class="text-emerald-700 hover:underline cursor-pointer">
-              Exporter en Excel (.csv)
+          <div class="flex items-center gap-2.5">
+            <button 
+              @click="exportToExcel('tresorerie')" 
+              class="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-2"
+            >
+              <i class="fa-solid fa-file-excel text-sm"></i>
+              <span>Exporter Rapport Budgétaire (.csv)</span>
             </button>
           </div>
         </div>
 
-        <!-- Synthèse par pôle épurée -->
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 py-2 border-b border-slate-100">
-          <div v-for="b in budgetSummaryByPole" :key="b.label">
-            <span class="text-[11px] text-slate-400 uppercase font-semibold">{{ b.label }}</span>
-            <div class="text-base font-bold text-emerald-800 font-mono">{{ b.total.toFixed(2) }} €</div>
-            <div class="text-[10px] text-slate-500">Validé : {{ b.validatedTotal.toFixed(2) }} €</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div 
+            v-for="b in budgetSummaryByPole" 
+            :key="b.label"
+            class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between"
+          >
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-black text-sm uppercase tracking-wider text-slate-800">Pôle {{ b.label }}</span>
+                <span class="text-xs bg-slate-100 px-2 py-0.5 rounded-full font-bold text-slate-600">
+                  {{ b.count }} article(s)
+                </span>
+              </div>
+              <div class="text-2xl font-black text-emerald-700 font-mono mt-1">
+                {{ b.total.toFixed(2) }} €
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Budget validé :</span>
+              <strong class="font-mono text-emerald-800 font-bold">{{ b.validatedTotal.toFixed(2) }} €</strong>
+            </div>
           </div>
         </div>
 
-        <!-- Tableau Financier Trésorerie avec Modification & Suppression Justifiée -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr class="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-semibold text-[10px]">
-                <th class="py-3 px-2 w-28">Pôle</th>
-                <th class="py-3 px-2 w-48">Article & Qté</th>
-                <th class="py-3 px-2">Justification du besoin</th>
-                <th class="py-3 px-2 w-28">Total Estimé</th>
-                <th class="py-3 px-2 w-32">Avis Logistique</th>
-                <th class="py-3 px-2 w-40">Décision Trésorerie</th>
-                <th class="py-3 px-2 text-right w-36">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr v-for="item in materialRequests" :key="item.id" class="hover:bg-slate-50/50 transition">
-                <td class="py-3 px-2 align-top font-bold text-slate-800 uppercase text-[11px]">{{ item.pole }}</td>
-                <td class="py-3 px-2 align-top font-bold text-slate-900">
-                  {{ item.article }} <span class="text-slate-500 font-normal">x{{ item.quantite }}</span>
-                </td>
-                <td class="py-3 px-2 align-top text-slate-600 leading-relaxed pr-4">{{ item.details }}</td>
-                <td class="py-3 px-2 align-top font-mono font-bold text-emerald-800 whitespace-nowrap">
-                  {{ item.estimated_price ? `${(Number(item.estimated_price) * item.quantite).toFixed(2)} €` : '0.00 €' }}
-                </td>
-                <td class="py-3 px-2 align-top">
-                  <span :class="getStatusColorClass(item.avis_logistique || item.status)">
-                    {{ getStatusLabel(item.avis_logistique || item.status) }}
-                  </span>
-                </td>
-                <td class="py-3 px-2 align-top">
-                  <span :class="getStatusColorClass(item.avis_tresorerie)">
-                    {{ getStatusLabel(item.avis_tresorerie) }}
-                  </span>
-                  <p v-if="item.reponse_tresorerie" class="text-slate-500 italic text-[11px] mt-0.5">
-                    {{ item.reponse_tresorerie }}
-                  </p>
-                </td>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Demandes de matériel à arbitrer</span>
+            <span class="text-xs font-semibold text-slate-500">Total estimé : <strong class="text-emerald-700 font-mono">{{ totalEstimatedBudget.toFixed(2) }} €</strong></span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50/50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                  <th class="p-3.5">Pôle</th>
+                  <th class="p-3.5">Article & Qté</th>
+                  <th class="p-3.5">Prix Unit.</th>
+                  <th class="p-3.5">Total Estimé</th>
+                  <th class="p-3.5">Justification du besoin</th>
+                  <th class="p-3.5">Avis Logistique</th>
+                  <th class="p-3.5">Décision Trésorerie</th>
+                  <th class="p-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="item in materialRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
+                  <td class="p-3.5 font-bold uppercase text-[11px] text-slate-700 align-top">{{ item.pole }}</td>
+                  <td class="p-3.5 font-extrabold text-slate-900 align-top">
+                    {{ item.article }} <span class="font-mono font-bold text-slate-500 text-xs">(x{{ item.quantite }})</span>
+                  </td>
+                  <td class="p-3.5 font-mono text-slate-700 align-top">
+                    {{ item.estimated_price ? `${Number(item.estimated_price).toFixed(2)} €` : '—' }}
+                  </td>
+                  <td class="p-3.5 font-mono font-bold text-emerald-800 align-top">
+                    {{ item.estimated_price ? `${(Number(item.estimated_price) * item.quantite).toFixed(2)} €` : '0.00 €' }}
+                  </td>
+                  <td class="p-3.5 text-slate-600 max-w-xs align-top leading-relaxed">
+                    {{ item.details }}
+                  </td>
+                  <td class="p-3.5 align-top">
+                    <span :class="[decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.badge, 'px-2 py-0.5 rounded text-[10px] font-bold border inline-block']">
+                      {{ decisionStatusList.find(s => s.id === (item.avis_logistique || item.status))?.label }}
+                    </span>
+                  </td>
+                  <td class="p-3.5 align-top">
+                    <div class="space-y-1">
+                      <span :class="[decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.badge, 'px-2.5 py-1 rounded text-[10px] font-bold border inline-block']">
+                        {{ decisionStatusList.find(s => s.id === (item.avis_tresorerie || 'en_attente'))?.label }}
+                      </span>
+                      <p v-if="item.reponse_tresorerie" class="text-xs text-slate-600 italic leading-snug">
+                        « {{ item.reponse_tresorerie }} »
+                      </p>
+                    </div>
+                  </td>
+                  <td class="p-3.5 text-right align-top">
+                    <button 
+                      @click="openDecisionModal(item, 'tresorerie')"
+                      class="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 ml-auto"
+                    >
+                      <i class="fa-solid fa-stamp text-[10px]"></i>
+                      <span>Arbitrer</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-                <!-- Actions Trésorerie : Arbitrer, Modifier, Supprimer avec justification -->
-                <td class="py-3 px-2 text-right align-top whitespace-nowrap space-x-2">
-                  <button 
-                    @click="openDecisionModal(item, 'tresorerie')"
-                    class="text-emerald-700 hover:underline font-bold cursor-pointer"
-                  >
-                    Arbitrer
-                  </button>
-                  <button 
-                    @click="openMaterialRequestModal(item)" 
-                    class="text-slate-500 hover:text-emerald-700 font-semibold cursor-pointer"
-                  >
-                    Modifier
-                  </button>
-                  <button 
-                    @click="promptDeleteWithReason(item)" 
-                    class="text-rose-600 hover:underline cursor-pointer"
-                    title="Supprimer la dépense en justifiant"
-                  >
-                    Supprimer
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- ================= VUE MESSAGES ================= -->
+      <div v-if="currentTab === 'messages' && canAccessTab('messages')" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div class="lg:col-span-5 bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 max-h-[620px] overflow-y-auto shadow-xs">
+          <div 
+            v-for="msg in messages" 
+            :key="msg.id"
+            @click="selectMsg(msg)"
+            :class="[
+              selectedMessage?.id === msg.id ? 'bg-emerald-50/70 border-l-4 border-emerald-600' : 'hover:bg-slate-50',
+              !msg.read ? 'font-bold bg-white' : 'text-slate-600'
+            ]"
+            class="p-4 cursor-pointer transition flex items-start justify-between gap-3"
+          >
+            <div class="overflow-hidden space-y-1">
+              <div class="flex items-center gap-2">
+                <span v-if="!msg.read" class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
+                <span class="text-sm truncate text-slate-900 font-bold">{{ msg.nom }}</span>
+              </div>
+              <div class="text-xs text-emerald-700 font-medium truncate">{{ msg.email }}</div>
+              <div class="text-xs text-slate-500 truncate">{{ msg.message }}</div>
+            </div>
+            <span class="text-[10px] text-slate-400 flex-shrink-0">
+              {{ new Date(msg.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) }}
+            </span>
+          </div>
+          <div v-if="messages.length === 0" class="p-8 text-center text-slate-400 text-xs">
+            Aucun message reçu.
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs min-h-[380px]">
+          <template v-if="selectedMessage">
+            <div class="flex flex-col sm:flex-row sm:items-start justify-between border-b border-slate-100 pb-4 mb-4 gap-4">
+              <div>
+                <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                  {{ selectedMessage.sujet || 'Message' }}
+                </span>
+                <h3 class="text-xl font-black text-slate-900 mt-2">{{ selectedMessage.nom }}</h3>
+                <p class="text-sm text-slate-600 mt-1">
+                  <a :href="`mailto:${selectedMessage.email}`" class="text-emerald-700 hover:underline font-semibold">
+                    {{ selectedMessage.email }}
+                  </a>
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button 
+                  @click="openFaqModalFromMessage(selectedMessage)"
+                  class="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <i class="fa-solid fa-circle-question"></i>
+                  <span>FAQ</span>
+                </button>
+                <button 
+                  @click="deleteMsg(selectedMessage.id)"
+                  class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-xl transition border border-rose-200 cursor-pointer"
+                >
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </div>
+            </div>
+            <div class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 p-5 rounded-2xl border border-slate-100">
+              {{ selectedMessage.message }}
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-100 flex justify-end">
+              <a 
+                :href="`mailto:${selectedMessage.email}?subject=Re: Course Pas d'oubli`"
+                class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-2"
+              >
+                <i class="fa-solid fa-reply"></i>
+                <span>Répondre par e-mail</span>
+              </a>
+            </div>
+          </template>
+          <div v-else class="h-64 flex flex-col items-center justify-center text-slate-400 text-center">
+            <i class="fa-regular fa-envelope-open text-4xl mb-2 text-slate-300"></i>
+            <p class="text-xs">Sélectionnez un message dans la colonne de gauche.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VUE BÉNÉVOLES ================= -->
+      <div v-if="currentTab === 'benevoles' && canAccessTab('benevoles')" class="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 shadow-xs overflow-hidden">
+        <div 
+          v-for="b in volunteers" 
+          :key="b.id" 
+          class="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50 transition"
+        >
+          <div class="space-y-2">
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="font-bold text-slate-900 text-base">{{ b.prenom }} {{ b.nom }}</span>
+              <span class="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full">
+                {{ availabilityLabels[b.disponibilites] || b.disponibilites }}
+              </span>
+              <span class="text-xs text-slate-400">
+                {{ new Date(b.created_at).toLocaleDateString('fr-FR') }}
+              </span>
+            </div>
+
+            <div class="flex flex-wrap gap-1.5 pt-0.5">
+              <span 
+                v-for="pole in b.poles" 
+                :key="pole" 
+                class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200"
+              >
+                <i class="fa-solid fa-check text-emerald-600 mr-1 text-[10px]"></i>
+                {{ poleLabels[pole] || pole }}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-4 text-xs text-slate-600 pt-1 flex-wrap">
+              <a :href="`mailto:${b.email}`" class="text-emerald-700 hover:underline flex items-center gap-1.5 font-medium">
+                <i class="fa-regular fa-envelope"></i>{{ b.email }}
+              </a>
+              <a :href="`tel:${b.telephone}`" class="text-slate-700 hover:underline flex items-center gap-1.5 font-medium">
+                <i class="fa-solid fa-phone"></i>{{ b.telephone }}
+              </a>
+            </div>
+
+            <p v-if="b.remarques" class="text-xs text-slate-600 italic bg-slate-50 border border-slate-100 p-2.5 rounded-xl max-w-2xl mt-1">
+              « {{ b.remarques }} »
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2 self-end lg:self-center">
+            <a 
+              :href="`mailto:${b.email}?subject=Association Pas d'oubli - Candidature bénévole`"
+              class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-reply"></i>
+              <span>Contacter</span>
+            </a>
+            <button 
+              @click="deleteVolunteer(b.id)" 
+              class="p-2 text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition cursor-pointer"
+            >
+              <i class="fa-solid fa-trash text-sm"></i>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="volunteers.length === 0" class="p-12 text-center text-slate-400 text-xs">
+          Aucune candidature bénévole enregistrée.
+        </div>
+      </div>
+
+      <!-- ================= VUE SPONSORS ================= -->
+      <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-4">
+        <div class="flex justify-between items-center">
+          <p class="text-xs text-slate-500">Ajoutez et modifiez les partenaires de la course.</p>
+          <button 
+            @click="openCreateSponsor" 
+            class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+          >
+            <i class="fa-solid fa-plus"></i>
+            <span>Ajouter un sponsor</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div 
+            v-for="s in sponsors" 
+            :key="s.id" 
+            class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between"
+          >
+            <div class="flex items-start gap-4 mb-4">
+              <div class="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center p-2 flex-shrink-0">
+                <img v-if="s.logo_url" :src="s.logo_url" :alt="s.nom" class="max-h-full max-w-full object-contain" />
+                <i v-else class="fa-solid fa-handshake text-xl text-slate-300"></i>
+              </div>
+              <div class="overflow-hidden">
+                <h4 class="font-bold text-slate-900 text-sm truncate">{{ s.nom }}</h4>
+                <p class="text-xs text-slate-500 line-clamp-2 mt-0.5">{{ s.description || 'Aucune description' }}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button 
+                @click="openEditSponsor(s)" 
+                class="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+              >
+                <i class="fa-solid fa-pen text-[10px]"></i>
+                <span>Modifier</span>
+              </button>
+              <button 
+                @click="deleteSponsor(s.id)" 
+                class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition border border-rose-200 cursor-pointer flex items-center gap-1"
+              >
+                <i class="fa-solid fa-trash text-[10px]"></i>
+                <span>Supprimer</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="sponsors.length === 0" class="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
+          Aucun partenaire enregistré.
+        </div>
+      </div>
+
+      <!-- ================= VUE CAGNOTTE ================= -->
+      <div v-if="currentTab === 'cagnotte' && canAccessTab('cagnotte')" class="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs max-w-xl">
+        <div class="mb-6">
+          <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i>
+            Actualisation de la cagnotte en direct
+          </h3>
+          <p class="text-xs text-slate-500 mt-1">
+            Les changements modifient directement la jauge affichée aux visiteurs sur le site.
+          </p>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Montant récolté (€)</label>
+            <input 
+              v-model.number="fundraisingCurrent" 
+              type="number" 
+              min="0"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-emerald-600"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Objectif fixé (€)</label>
+            <input 
+              v-model.number="fundraisingGoal" 
+              type="number" 
+              min="1"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-emerald-600"
+            />
+          </div>
+
+          <button 
+            @click="handleSaveFundraising"
+            :disabled="updatingFundraising"
+            class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition cursor-pointer flex items-center justify-center gap-2"
+          >
+            <i v-if="updatingFundraising" class="fa-solid fa-circle-notch fa-spin"></i>
+            <span>Mettre à jour la cagnotte</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ================= VUE FAQ ================= -->
+      <div v-if="currentTab === 'faq' && canAccessTab('faq')" class="space-y-4">
+        <div class="flex justify-between items-center">
+          <p class="text-xs text-slate-500">Gérez les questions fréquentes affichées sur la page d'accueil.</p>
+          <button 
+            @click="openManualFaqModal" 
+            class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+          >
+            <i class="fa-solid fa-plus"></i>
+            <span>Nouvelle question</span>
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 shadow-xs">
+          <div v-for="item in faqs" :key="item.id" class="p-5 flex items-start justify-between gap-4">
+            <div class="space-y-1.5">
+              <h4 class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                {{ item.question }}
+              </h4>
+              <p class="text-xs text-slate-600 leading-relaxed pl-4">{{ item.reponse }}</p>
+            </div>
+            <button @click="deleteFaq(item.id)" class="text-slate-400 hover:text-rose-600 p-2 text-sm transition cursor-pointer">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+          <div v-if="faqs.length === 0" class="p-8 text-center text-slate-400 text-xs">
+            La FAQ est vide.
+          </div>
         </div>
       </div>
 
     </div>
   </div>
 
-  <!-- MODALE : CRÉATION / ÉDITION D'UNE LIGNE MATÉRIEL -->
-  <div v-if="showMaterialModal" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl relative">
-      <button @click="showMaterialModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
-      <h3 class="text-lg font-bold text-slate-900 mb-1">
-        {{ editingMaterialRequest ? 'Modifier la demande' : 'Nouvelle demande de matériel' }}
-      </h3>
-      <p class="text-xs text-slate-500 mb-4">La justification de la commande est obligatoire.</p>
+  <!-- MODALE : CHANGER DE COMPTE -->
+  <div v-if="showSwitchAccountModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl relative">
+      <button @click="showSwitchAccountModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
 
-      <div class="space-y-3">
-        <div v-if="isDirection">
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Pôle concerné</label>
-          <select v-model="materialForm.pole" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600">
-            <option v-for="p in allPoles" :key="p.id" :value="p.id">{{ p.label }}</option>
-          </select>
+      <div class="text-center mb-6">
+        <div class="w-12 h-12 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center mx-auto text-xl mb-2">
+          <i class="fa-solid fa-users-gear"></i>
+        </div>
+        <h3 class="text-xl font-black text-slate-900">Changer de Compte</h3>
+        <p class="text-xs text-slate-500 mt-1">Connectez-vous à un autre pôle ou à la direction.</p>
+      </div>
+
+      <form @submit.prevent="handleLogin" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nouvel e-mail</label>
+          <input 
+            v-model="loginEmail" 
+            required 
+            type="email" 
+            placeholder="ex: logistique@pasdoubli.fr" 
+            class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-emerald-600 outline-none" 
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Article souhaité *</label>
-          <input v-model="materialForm.article" type="text" placeholder="Ex. Barrières Vauban..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600" />
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Mot de passe</label>
+          <input 
+            v-model="loginPassword" 
+            required 
+            type="password" 
+            placeholder="••••••••" 
+            class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-emerald-600 outline-none" 
+          />
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Quantité *</label>
-            <input v-model.number="materialForm.quantite" type="number" min="1" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600 font-mono" />
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Prix unit. (€) <span class="font-normal text-slate-400">(option)</span></label>
-            <input v-model.number="materialForm.estimated_price" type="number" step="0.01" min="0" placeholder="Ex. 15.00" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600 font-mono" />
-          </div>
-        </div>
+        <p v-if="loginError" class="text-xs text-rose-600 font-semibold text-center">{{ loginError }}</p>
 
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">Pourquoi demandez-vous cela ? *</label>
-          <textarea v-model="materialForm.details" rows="3" required placeholder="Utilité, emplacement, horaire requis..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600"></textarea>
-        </div>
-
-        <button @click="submitMaterialRequest" class="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs transition cursor-pointer mt-2">
-          {{ editingMaterialRequest ? 'Enregistrer les modifications' : 'Transmettre la demande' }}
+        <button 
+          type="submit" 
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-sm transition cursor-pointer shadow-md"
+        >
+          Valider le changement
         </button>
-      </div>
+      </form>
     </div>
   </div>
 
-  <!-- MODALE : ARBITRAGE (LOGISTIQUE OU TRÉSORERIE) -->
-  <div v-if="showDecisionModal" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl relative">
-      <button @click="showDecisionModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+  <!-- MODALE D'ARBITRAGE ET JUSTIFICATION -->
+  <div v-if="showDecisionModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
+      <button @click="showDecisionModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
 
-      <h3 class="text-lg font-bold text-slate-900 mb-1">
-        Décision {{ decisionType === 'logistique' ? 'Logistique' : 'Trésorerie' }}
+      <h3 class="text-xl font-black text-slate-900 mb-1">
+        Avis {{ decisionType === 'logistique' ? 'Logistique' : 'Trésorerie' }}
       </h3>
-      <p class="text-xs text-slate-500 mb-4">{{ decisionTargetItem?.article }} (x{{ decisionTargetItem?.quantite }}) — Pôle {{ decisionTargetItem?.pole }}</p>
+      <p class="text-xs text-slate-500 mb-4">
+        Article : <strong class="text-slate-800">{{ decisionTargetItem?.article }} (x{{ decisionTargetItem?.quantite }})</strong> — Pôle {{ decisionTargetItem?.pole }}
+      </p>
 
       <div class="space-y-4">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Statut</label>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Décision</label>
           <div class="grid grid-cols-3 gap-2">
             <button 
               type="button" 
               @click="decisionForm.status = 'valide'"
-              :class="decisionForm.status === 'valide' ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-100 text-slate-700'"
-              class="py-2 text-xs rounded-lg transition cursor-pointer"
+              :class="decisionForm.status === 'valide' ? 'bg-emerald-700 text-white font-bold border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 text-xs rounded-xl border transition cursor-pointer"
             >
               Validé
             </button>
             <button 
               type="button" 
               @click="decisionForm.status = 'refuse'"
-              :class="decisionForm.status === 'refuse' ? 'bg-rose-700 text-white font-bold' : 'bg-slate-100 text-slate-700'"
-              class="py-2 text-xs rounded-lg transition cursor-pointer"
+              :class="decisionForm.status === 'refuse' ? 'bg-rose-700 text-white font-bold border-rose-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 text-xs rounded-xl border transition cursor-pointer"
             >
               Refusé
             </button>
             <button 
               type="button" 
               @click="decisionForm.status = 'en_attente'"
-              :class="decisionForm.status === 'en_attente' ? 'bg-amber-600 text-white font-bold' : 'bg-slate-100 text-slate-700'"
-              class="py-2 text-xs rounded-lg transition cursor-pointer"
+              :class="decisionForm.status === 'en_attente' ? 'bg-amber-600 text-white font-bold border-amber-600' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 text-xs rounded-xl border transition cursor-pointer"
             >
               En attente
             </button>
@@ -992,105 +1679,312 @@ nav::-webkit-scrollbar {
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">
-            Motif / Justification <span v-if="decisionForm.status === 'refuse'" class="text-rose-600 font-bold">(obligatoire)</span>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1 flex items-center justify-between">
+            <span>Motif / Commentaire</span>
+            <span v-if="decisionForm.status === 'refuse'" class="text-[10px] text-rose-600 font-bold lowercase">Obligatoire pour un refus</span>
+            <span v-else class="text-[10px] text-slate-400 font-normal lowercase">Facultatif</span>
           </label>
           <textarea 
             v-model="decisionForm.comment" 
-            rows="3" 
-            :placeholder="decisionForm.status === 'refuse' ? 'Raison impérative du refus...' : 'Commentaire optionnel...'" 
-            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600"
+            rows="4" 
+            :placeholder="decisionForm.status === 'refuse' ? 'Indiquez impérativement la raison du refus...' : 'Ajoutez une précision ou une condition éventuelle...'" 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
           ></textarea>
         </div>
 
-        <button @click="saveDecision" class="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs transition cursor-pointer">
-          Confirmer la décision
+        <button 
+          @click="saveDecision" 
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+        >
+          Valider la décision
         </button>
       </div>
     </div>
   </div>
 
-  <!-- MODALE : SUPPRESSION JUSTIFIÉE (TRÉSORERIE) -->
-  <div v-if="showDeleteReasonModal" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl relative">
-      <button @click="showDeleteReasonModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+  <!-- MODALE POST-IT (CRÉATION / ÉDITION) -->
+  <div v-if="showTaskModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+      <button @click="showTaskModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
 
-      <h3 class="text-lg font-bold text-rose-600 mb-1">Supprimer cette demande</h3>
-      <p class="text-xs text-slate-500 mb-4">
-        Article : <strong>{{ itemToDelete?.article }}</strong> pour le pôle <strong>{{ itemToDelete?.pole }}</strong>
-      </p>
+      <h3 class="text-lg font-black text-slate-900 mb-1">
+        {{ editingTask ? 'Modifier le Post-it' : 'Nouveau Post-it' }}
+      </h3>
+      <p class="text-xs text-slate-500 mb-4">Pôle : <strong class="capitalize text-emerald-700">{{ selectedPole }}</strong></p>
 
-      <div class="space-y-4">
+      <div class="space-y-3.5">
         <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">
-            Motif de suppression pour le pôle *
-          </label>
-          <textarea 
-            v-model="deleteReasonInput" 
-            rows="3" 
-            placeholder="Ex : Hors budget, doublon avec le pôle logistique, article déjà réservé..." 
-            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-rose-600"
-          ></textarea>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Titre de l'action</label>
+          <input v-model="taskForm.titre" type="text" placeholder="Ex. Relancer la mairie pour le tracé" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
         </div>
 
-        <button @click="confirmDeleteWithReason" class="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition cursor-pointer">
-          Confirmer la suppression
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODALE : CHANGER DE COMPTE -->
-  <div v-if="showSwitchAccountModal" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl relative">
-      <button @click="showSwitchAccountModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
-      <h3 class="text-lg font-bold text-slate-900 mb-1">Changer de Compte</h3>
-      <p class="text-xs text-slate-500 mb-4">Connectez-vous avec un autre compte ou pôle.</p>
-
-      <form @submit.prevent="handleLogin" class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">E-mail</label>
-          <input v-model="loginEmail" required type="email" placeholder="pole@pasdoubli.fr" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600" />
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">En charge</label>
+          <input v-model="taskForm.assigne_a" type="text" placeholder="Ex. Thomas, Lucie..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Mot de passe</label>
-          <input v-model="loginPassword" required type="password" placeholder="••••••••" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600" />
-        </div>
-        <p v-if="loginError" class="text-xs text-rose-600">{{ loginError }}</p>
-        <button type="submit" class="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs transition cursor-pointer">
-          Valider
-        </button>
-      </form>
-    </div>
-  </div>
 
-  <!-- MODALE : POST-IT KANBAN -->
-  <div v-if="showTaskModal" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl relative">
-      <button @click="showTaskModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
-      <h3 class="text-lg font-bold text-slate-900 mb-3">{{ editingTask ? 'Modifier le Post-it' : 'Nouveau Post-it' }}</h3>
-
-      <div class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Titre</label>
-          <input v-model="taskForm.titre" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600" />
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">En charge</label>
-          <input v-model="taskForm.assigne_a" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600" />
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Colonne</label>
-          <select v-model="taskForm.status" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600 bg-white">
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Colonne</label>
+          <select v-model="taskForm.status" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600 bg-white">
             <option v-for="c in columns" :key="c.id" :value="c.id">{{ c.label }}</option>
           </select>
         </div>
+
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Description</label>
-          <textarea v-model="taskForm.description" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-emerald-600"></textarea>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Description</label>
+          <textarea v-model="taskForm.description" rows="3" placeholder="Détails du sujet..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600"></textarea>
         </div>
-        <button @click="saveTask" class="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs transition cursor-pointer mt-2">
-          {{ editingTask ? 'Mettre à jour' : 'Créer' }}
+
+        <button @click="saveTask" class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-sm transition cursor-pointer mt-2">
+          {{ editingTask ? 'Mettre à jour' : 'Épingler le post-it' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE DÉTAIL POST-IT (ÉTAPES & COMMENTAIRES) -->
+  <div v-if="showDetailModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl relative flex flex-col max-h-[90vh]">
+      <button @click="showDetailModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="border-b border-slate-100 pb-3 mb-4 pr-6">
+        <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+          Pôle {{ currentTaskDetail?.pole }}
+        </span>
+        <h3 class="text-xl font-black text-slate-900 mt-2">{{ currentTaskDetail?.titre }}</h3>
+        <p v-if="currentTaskDetail?.assigne_a" class="text-xs text-slate-500 mt-0.5">
+          En charge : <strong class="text-slate-800">{{ currentTaskDetail?.assigne_a }}</strong>
+        </p>
+        <p v-if="currentTaskDetail?.description" class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl mt-2 border border-slate-100">
+          {{ currentTaskDetail?.description }}
+        </p>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-6 pr-1">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+              <i class="fa-solid fa-list-check text-emerald-600"></i>
+              Étapes d'avancement ({{ currentTaskSteps.filter(s => s.completed).length }}/{{ currentTaskSteps.length }})
+            </h4>
+          </div>
+
+          <div class="flex gap-2 mb-3">
+            <input 
+              v-model="newStepTitle" 
+              @keyup.enter="addStep"
+              type="text" 
+              placeholder="Ajouter une étape au post-it (ex: Appel validé)..." 
+              class="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+            />
+            <button 
+              @click="addStep" 
+              class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Ajouter
+            </button>
+          </div>
+
+          <div class="space-y-1.5">
+            <div 
+              v-for="st in currentTaskSteps" 
+              :key="st.id" 
+              class="flex items-center justify-between p-2.5 rounded-xl border transition group"
+              :class="st.completed ? 'bg-slate-50 border-slate-200 text-slate-400 line-through' : 'bg-white border-slate-200 text-slate-800'"
+            >
+              <label class="flex items-center gap-2.5 flex-1 cursor-pointer select-none text-xs">
+                <input 
+                  type="checkbox" 
+                  :checked="st.completed" 
+                  @change="toggleStep(st)"
+                  class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span>{{ st.titre }}</span>
+              </label>
+              <button 
+                @click="deleteStep(st.id)" 
+                class="text-slate-300 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition p-1 cursor-pointer"
+              >
+                <i class="fa-solid fa-trash text-[11px]"></i>
+              </button>
+            </div>
+
+            <div v-if="currentTaskSteps.length === 0" class="text-center py-3 text-slate-400 text-xs italic">
+              Aucune étape définie pour ce post-it.
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100">
+          <h4 class="text-xs font-black uppercase text-slate-700 tracking-wider mb-2 flex items-center gap-1.5">
+            <i class="fa-regular fa-comments text-emerald-600"></i>
+            Commentaires & avis ({{ currentTaskComments.length }})
+          </h4>
+
+          <div class="space-y-2 mb-3">
+            <div v-for="c in currentTaskComments" :key="c.id" class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+              <div class="flex items-center justify-between font-bold text-slate-800 mb-1">
+                <span class="text-emerald-800 font-extrabold">{{ c.auteur }}</span>
+                <span class="text-[10px] text-slate-400 font-normal">
+                  {{ new Date(c.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) }}
+                </span>
+              </div>
+              <p class="text-slate-600 whitespace-pre-wrap leading-relaxed">{{ c.commentaire }}</p>
+            </div>
+            <div v-if="currentTaskComments.length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+              Aucun avis pour l'instant.
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <input 
+              v-model="newComment" 
+              @keyup.enter="addComment"
+              type="text" 
+              placeholder="Écrire une remarque..." 
+              class="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+            />
+            <button 
+              @click="addComment" 
+              class="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl cursor-pointer transition"
+            >
+              Envoyer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE DEMANDE DE MATÉRIEL -->
+  <div v-if="showMaterialModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
+      <button @click="showMaterialModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <h3 class="text-xl font-black text-slate-900 mb-1">Demande de Matériel</h3>
+      <p class="text-xs text-slate-500 mb-4">La justification est exigée pour instruction conjointe de la logistique et de la trésorerie.</p>
+
+      <div class="space-y-3.5">
+        <div v-if="isDirection">
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Pour le pôle</label>
+          <select v-model="materialForm.pole" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-600 bg-white">
+            <option v-for="p in allPoles" :key="p.id" :value="p.id">{{ p.label }}</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Article / Matériel souhaité *</label>
+          <input 
+            v-model="materialForm.article" 
+            type="text" 
+            placeholder="Ex. 10 barrières Vauban, 2 barnums 3x3..." 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Quantité *</label>
+            <input 
+              v-model.number="materialForm.quantite" 
+              type="number" 
+              min="1" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">
+              Prix unit. indicatif (€) <span class="text-[9px] text-slate-400 font-normal lowercase">(option)</span>
+            </label>
+            <input 
+              v-model.number="materialForm.estimated_price" 
+              type="number" 
+              step="0.01" 
+              min="0" 
+              placeholder="Ex. 15.50" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1 flex items-center justify-between">
+            <span>Pourquoi demandez-vous cela ? *</span>
+            <span class="text-[10px] text-rose-600 font-bold lowercase">Obligatoire</span>
+          </label>
+          <textarea 
+            v-model="materialForm.details" 
+            rows="3" 
+            required
+            placeholder="Précisez impérativement l'utilité, l'emplacement exact et l'horaire requis..." 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+          ></textarea>
+        </div>
+
+        <button 
+          @click="submitMaterialRequest" 
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer mt-2"
+        >
+          Transmettre la demande
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE SPONSOR -->
+  <div v-if="showSponsorModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative">
+      <button @click="showSponsorModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+      <h3 class="text-lg font-black text-slate-900 mb-1">
+        {{ editingSponsor ? 'Modifier le sponsor' : 'Nouveau sponsor' }}
+      </h3>
+      <div class="space-y-4 mt-4">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nom</label>
+          <input v-model="sponsorForm.nom" type="text" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Description</label>
+          <input v-model="sponsorForm.description" type="text" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">URL du logo</label>
+          <input v-model="sponsorForm.logo_url" type="url" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
+        </div>
+        <button @click="handleSaveSponsor" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition cursor-pointer">
+          {{ editingSponsor ? 'Enregistrer' : 'Créer' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE FAQ -->
+  <div v-if="showFaqModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative">
+      <button @click="showFaqModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+      <h3 class="text-lg font-black text-slate-900 mb-1">Publier une question FAQ</h3>
+      <div class="space-y-4 mt-4">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Question</label>
+          <input v-model="faqForm.question" type="text" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Réponse</label>
+          <textarea v-model="faqForm.reponse" rows="4" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600"></textarea>
+        </div>
+        <button @click="handleSaveFaq" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition cursor-pointer">
+          Enregistrer dans la FAQ
         </button>
       </div>
     </div>
