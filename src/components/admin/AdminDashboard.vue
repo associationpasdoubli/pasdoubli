@@ -5,6 +5,7 @@ import { useToast } from '../../composables/useToast';
 
 const { triggerToast } = useToast();
 const fundraisingParticipants = ref(0);
+
 // ================= AUTHENTIFICATION & RÔLES ================= //
 const user = ref(null);
 const userProfile = ref(null);
@@ -78,6 +79,9 @@ const canAccessTab = (tab) => {
 };
 
 const currentTab = ref('poles');
+
+// Sous-onglets pour la section Sponsors
+const currentSponsorSubTab = ref('annuaire'); // 'annuaire', 'besoins', 'partenaires'
 
 // ================= DONNÉES DU DASHBOARD ================= //
 const messages = ref([]);
@@ -163,15 +167,12 @@ const decisionStatusList = [
 ];
 
 const isLogistiqueOrDirection = computed(() => isDirection.value || currentRole.value === 'logistique');
-const isTresorerieOrDirection = computed(() => isDirection.value || currentRole.value === 'tresorerie');
-const isSponsorOrDirection = computed(() => isDirection.value || currentRole.value === 'sponsor');
 
 const filteredMaterialRequests = computed(() => {
   if (isLogistiqueOrDirection.value) return materialRequests.value;
   return materialRequests.value.filter(m => m.pole === currentRole.value);
 });
 
-// Demandes orientées vers les sponsors
 const sponsorMaterialRequests = computed(() => {
   return materialRequests.value.filter(m => m.demande_sponsor === true);
 });
@@ -261,6 +262,134 @@ const exportToExcel = (type = 'logistique') => {
   link.click();
   document.body.removeChild(link);
   triggerToast('Export Excel téléchargé !');
+};
+
+// ================= ANNUAIRE PROSPECTION SPONSORS ================= //
+const sponsorProspects = ref([]);
+const showProspectModal = ref(false);
+const editingProspect = ref(null);
+const prospectFilter = ref('all');
+
+const prospectForm = ref({
+  nom_entreprise: '',
+  nom_contact: '',
+  contact_asso: '',
+  telephone: '',
+  email: '',
+  adresse_postale: '',
+  responsable: '',
+  statut: 'a_contacter',
+  notes: ''
+});
+
+const prospectStatusList = [
+  { id: 'a_contacter', label: 'À contacter', badge: 'bg-amber-100 text-amber-900 border-amber-200' },
+  { id: 'contacte', label: 'Contactée', badge: 'bg-blue-100 text-blue-900 border-blue-200' },
+  { id: 'en_negociation', label: 'En négociation', badge: 'bg-purple-100 text-purple-900 border-purple-200' },
+  { id: 'signe', label: 'Partenaire confirmé', badge: 'bg-emerald-100 text-emerald-900 border-emerald-200' },
+  { id: 'refuse', label: 'Refusé', badge: 'bg-rose-100 text-rose-900 border-rose-200' }
+];
+
+const fetchSponsorProspects = async () => {
+  const { data, error } = await supabase
+    .from('sponsor_prospects')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (data && !error) sponsorProspects.value = data;
+};
+
+const filteredProspects = computed(() => {
+  if (prospectFilter.value === 'all') return sponsorProspects.value;
+  return sponsorProspects.value.filter(p => p.statut === prospectFilter.value);
+});
+
+const openCreateProspect = () => {
+  editingProspect.value = null;
+  prospectForm.value = {
+    nom_entreprise: '',
+    nom_contact: '',
+    contact_asso: '',
+    telephone: '',
+    email: '',
+    adresse_postale: '',
+    responsable: userRoleTitle.value,
+    statut: 'a_contacter',
+    notes: ''
+  };
+  showProspectModal.value = true;
+};
+
+const openEditProspect = (item) => {
+  editingProspect.value = item;
+  prospectForm.value = {
+    nom_entreprise: item.nom_entreprise || '',
+    nom_contact: item.nom_contact || '',
+    contact_asso: item.contact_asso || '',
+    telephone: item.telephone || '',
+    email: item.email || '',
+    adresse_postale: item.adresse_postale || '',
+    responsable: item.responsable || '',
+    statut: item.statut || 'a_contacter',
+    notes: item.notes || ''
+  };
+  showProspectModal.value = true;
+};
+
+const saveProspect = async () => {
+  if (!prospectForm.value.nom_entreprise || !prospectForm.value.nom_entreprise.trim()) {
+    triggerToast("Le nom de l'entreprise est obligatoire.");
+    return;
+  }
+
+  const payload = {
+    nom_entreprise: prospectForm.value.nom_entreprise.trim(),
+    nom_contact: prospectForm.value.nom_contact?.trim() || null,
+    contact_asso: prospectForm.value.contact_asso?.trim() || null,
+    telephone: prospectForm.value.telephone?.trim() || null,
+    email: prospectForm.value.email?.trim() || null,
+    adresse_postale: prospectForm.value.adresse_postale?.trim() || null,
+    responsable: prospectForm.value.responsable?.trim() || null,
+    statut: prospectForm.value.statut,
+    notes: prospectForm.value.notes?.trim() || null
+  };
+
+  if (editingProspect.value) {
+    const { error } = await supabase
+      .from('sponsor_prospects')
+      .update(payload)
+      .eq('id', editingProspect.value.id);
+
+    if (!error) {
+      const idx = sponsorProspects.value.findIndex(p => p.id === editingProspect.value.id);
+      if (idx !== -1) sponsorProspects.value[idx] = { ...sponsorProspects.value[idx], ...payload };
+      showProspectModal.value = false;
+      triggerToast('Entreprise mise à jour !');
+    } else {
+      triggerToast('Erreur lors de la mise à jour.');
+    }
+  } else {
+    const { data, error } = await supabase
+      .from('sponsor_prospects')
+      .insert([payload])
+      .select();
+
+    if (!error && data) {
+      sponsorProspects.value.unshift(data[0]);
+      showProspectModal.value = false;
+      triggerToast('Entreprise ajoutée à l’annuaire !');
+    } else {
+      triggerToast('Erreur lors de l’ajout.');
+    }
+  }
+};
+
+const deleteProspect = async (id) => {
+  if (!confirm('Supprimer définitivement ce contact d’entreprise ?')) return;
+  const { error } = await supabase.from('sponsor_prospects').delete().eq('id', id);
+  if (!error) {
+    sponsorProspects.value = sponsorProspects.value.filter(p => p.id !== id);
+    triggerToast('Contact supprimé.');
+  }
 };
 
 // Modales FAQ & Sponsors
@@ -357,6 +486,12 @@ const loadPermittedData = async () => {
   loadPoleData();
   fetchMaterialRequests();
 
+  if (canAccessTab('sponsors')) {
+    const { data } = await supabase.from('sponsors').select('*').order('id', { ascending: true });
+    if (data) sponsors.value = data;
+    fetchSponsorProspects();
+  }
+
   if (canAccessTab('messages')) {
     const { data } = await supabase.from('messages').select('*').order('id', { ascending: false });
     if (data) messages.value = data;
@@ -372,19 +507,14 @@ const loadPermittedData = async () => {
     if (data) faqs.value = data;
   }
 
-  if (canAccessTab('sponsors')) {
-    const { data } = await supabase.from('sponsors').select('*').order('id', { ascending: true });
-    if (data) sponsors.value = data;
-  }
-
   if (canAccessTab('cagnotte')) {
-  const { data } = await supabase.from('fundraising').select('*').eq('id', 1).maybeSingle();
-  if (data) {
-    fundraisingCurrent.value = data.current_amount;
-    fundraisingGoal.value = data.goal_amount;
-    fundraisingParticipants.value = data.participants_count || 0; // <-- Ajout ici
+    const { data } = await supabase.from('fundraising').select('*').eq('id', 1).maybeSingle();
+    if (data) {
+      fundraisingCurrent.value = data.current_amount;
+      fundraisingGoal.value = data.goal_amount;
+      fundraisingParticipants.value = data.participants_count || 0;
+    }
   }
-}
 };
 
 const loadPoleData = async () => {
@@ -398,7 +528,7 @@ const loadPoleData = async () => {
   if (commentsData) comments.value = commentsData;
 };
 
-// ================= GESTION DU KANBAN (CORRECTION POST-IT) ================= //
+// ================= GESTION DU KANBAN ================= //
 const tasksByStatus = (status) => {
   return tasks.value.filter(t => t.pole === selectedPole.value && t.status === status);
 };
@@ -646,7 +776,6 @@ const submitMaterialRequest = async () => {
   }
 };
 
-// Bouton pour demander le sponsoring d'un matériel
 const askSponsorsForMaterial = async (item) => {
   if (item.demande_sponsor) {
     triggerToast('Déjà transmis au pôle sponsors.');
@@ -667,7 +796,6 @@ const askSponsorsForMaterial = async (item) => {
   }
 };
 
-// Arbitrage côté Pôle Sponsors (Acceptation -> Post-it 'À faire' / Refus)
 const handleSponsorResponse = async (item, decision) => {
   if (decision === 'refuse') {
     const { error } = await supabase
@@ -682,7 +810,6 @@ const handleSponsorResponse = async (item, decision) => {
     return;
   }
 
-  // Si accepté : on met à jour la demande et on crée automatiquement le post-it
   const taskTitle = `Recherche sponsor : ${item.article} (x${item.quantite})`;
   const taskDesc = `Besoin exprimé par Pôle ${item.pole}.
 Justification : ${item.details}
@@ -933,7 +1060,7 @@ const handleSaveFundraising = async () => {
     .update({
       current_amount: Number(fundraisingCurrent.value) || 0,
       goal_amount: Number(fundraisingGoal.value) || 5000,
-      participants_count: Number(fundraisingParticipants.value) || 0, // <-- Ajout ici
+      participants_count: Number(fundraisingParticipants.value) || 0,
       updated_at: new Date().toISOString()
     })
     .eq('id', 1);
@@ -1118,7 +1245,7 @@ onMounted(async () => {
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-handshake text-xs"></i>
-            <span>Sponsors ({{ sponsors.length }})</span>
+            <span>Pôle Sponsors</span>
             <span v-if="sponsorMaterialRequests.filter(s => s.statut_sponsor === 'en_attente').length > 0" class="w-2 h-2 rounded-full bg-amber-500"></span>
           </button>
 
@@ -1260,7 +1387,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE BESOINS EN MATÉRIEL (LOGISTIQUE) ================= -->
+      <!-- ================= VUE BESOINS EN MATÉRIEL ================= -->
       <div v-if="currentTab === 'materiel' && canAccessTab('materiel')" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -1375,7 +1502,6 @@ onMounted(async () => {
                     </div>
                   </td>
 
-                  <!-- DÉLÉGATION SPONSOR -->
                   <td class="p-4 align-top">
                     <div v-if="item.demande_sponsor">
                       <span v-if="item.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 inline-block">
@@ -1430,7 +1556,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE (DESIGN IDENTIQUE) ================= -->
+      <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE ================= -->
       <div v-if="currentTab === 'budget_tresorerie' && canAccessTab('budget_tresorerie')" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -1604,19 +1730,198 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE SPONSORS & DEMANDES MATÉRIEL DÉLÉGUÉES ================= -->
-      <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-8">
+      <!-- ================= VUE SPONSORS : 3 SOUS-ONGLETS DISTINCTS ================= -->
+      <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-6">
         
-        <!-- SECTION : MATÉRIEL DÉLÉGUÉ AUX SPONSORS -->
-        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-          <div class="flex items-center justify-between mb-4">
+        <!-- BANDEAU DE NAVIGATION INTERNE AU PÔLE SPONSORS -->
+        <div class="border-b border-slate-200 overflow-hidden">
+          <div class="flex items-center gap-6 -mb-px flex-wrap">
+            <button
+              @click="currentSponsorSubTab = 'annuaire'"
+              :class="currentSponsorSubTab === 'annuaire'
+                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
+            >
+              <i class="fa-solid fa-address-book"></i>
+              <span>Annuaire Prospection ({{ sponsorProspects.length }})</span>
+            </button>
+
+            <button
+              @click="currentSponsorSubTab = 'besoins'"
+              :class="currentSponsorSubTab === 'besoins'
+                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
+            >
+              <i class="fa-solid fa-boxes-packing"></i>
+              <span>Besoins à faire sponsoriser</span>
+              <span v-if="sponsorMaterialRequests.length > 0" class="px-1.5 py-0.2 rounded-full text-[10px]" :class="currentSponsorSubTab === 'besoins' ? 'bg-emerald-100 text-emerald-800 font-mono font-bold' : 'bg-slate-200 text-slate-600 font-mono'">
+                {{ sponsorMaterialRequests.length }}
+              </span>
+            </button>
+
+            <button
+              @click="currentSponsorSubTab = 'partenaires'"
+              :class="currentSponsorSubTab === 'partenaires'
+                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
+            >
+              <i class="fa-solid fa-globe"></i>
+              <span>Partenaires du site ({{ sponsors.length }})</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. ANNUAIRE PROSPECTION -->
+        <div v-if="currentSponsorSubTab === 'annuaire'" class="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+          <div class="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
-                <i class="fa-solid fa-handshake text-emerald-600"></i>
-                <span>Besoins matériels à faire sponsoriser</span>
+                <i class="fa-solid fa-address-book text-emerald-600"></i>
+                <span>Annuaire Prospection Entreprises</span>
               </h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                Demandes d'autres pôles nécessitant un partenariat ou don matériel.
+                Suivi des démarches, contacts de l'association et statut des négociations.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <select 
+                v-model="prospectFilter" 
+                class="px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-600 bg-white cursor-pointer"
+              >
+                <option value="all">Toutes les entreprises ({{ sponsorProspects.length }})</option>
+                <option value="a_contacter">À contacter</option>
+                <option value="contacte">Contactées</option>
+                <option value="en_negociation">En négociation</option>
+                <option value="signe">Partenaires confirmés</option>
+                <option value="refuse">Refusées</option>
+              </select>
+
+              <button 
+                @click="openCreateProspect" 
+                class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
+              >
+                <i class="fa-solid fa-plus"></i>
+                <span>Ajouter une entreprise</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                  <th class="p-3.5">Entreprise & Adresse</th>
+                  <th class="p-3.5">Interlocuteur</th>
+                  <th class="p-3.5">Contact Asso / Entrée</th>
+                  <th class="p-3.5">Coordonnées</th>
+                  <th class="p-3.5">Responsable</th>
+                  <th class="p-3.5">Statut</th>
+                  <th class="p-3.5 text-right w-20">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="item in filteredProspects" :key="item.id" class="hover:bg-slate-50/70 transition">
+                  <td class="p-3.5 align-top">
+                    <div class="font-extrabold text-slate-900 text-sm">{{ item.nom_entreprise }}</div>
+                    <div v-if="item.adresse_postale" class="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5 max-w-xs">
+                      <i class="fa-solid fa-location-dot text-slate-400 mt-0.5 text-[10px]"></i>
+                      <span>{{ item.adresse_postale }}</span>
+                    </div>
+                    <p v-if="item.notes" class="text-[10px] text-slate-500 italic mt-1 bg-slate-50 p-1.5 rounded border border-slate-200/50">
+                      Note : {{ item.notes }}
+                    </p>
+                  </td>
+
+                  <td class="p-3.5 align-top">
+                    <span v-if="item.nom_contact" class="font-bold text-slate-800">
+                      {{ item.nom_contact }}
+                    </span>
+                    <span v-else class="text-slate-400 italic">Non spécifié</span>
+                  </td>
+
+                  <td class="p-3.5 align-top">
+                    <span v-if="item.contact_asso" class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[10px] inline-flex items-center gap-1">
+                      <i class="fa-solid fa-user-tag text-[9px]"></i>
+                      {{ item.contact_asso }}
+                    </span>
+                    <span v-else class="text-slate-400 italic">Aucun</span>
+                  </td>
+
+                  <td class="p-3.5 align-top space-y-1">
+                    <div v-if="item.telephone">
+                      <a :href="`tel:${item.telephone}`" class="text-slate-700 hover:text-emerald-700 font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-phone text-[10px] text-slate-400"></i>
+                        <span>{{ item.telephone }}</span>
+                      </a>
+                    </div>
+                    <div v-if="item.email">
+                      <a :href="`mailto:${item.email}`" class="text-emerald-700 hover:underline font-medium flex items-center gap-1.5">
+                        <i class="fa-regular fa-envelope text-[10px]"></i>
+                        <span class="truncate max-w-[160px]">{{ item.email }}</span>
+                      </a>
+                    </div>
+                    <div v-if="!item.telephone && !item.email" class="text-slate-400 italic">
+                      Non renseigné
+                    </div>
+                  </td>
+
+                  <td class="p-3.5 align-top">
+                    <span v-if="item.responsable" class="font-semibold text-slate-800 text-[11px] bg-slate-100 px-2 py-0.5 rounded">
+                      {{ item.responsable }}
+                    </span>
+                    <span v-else class="text-slate-400 italic">Non assigné</span>
+                  </td>
+
+                  <td class="p-3.5 align-top whitespace-nowrap">
+                    <span :class="[prospectStatusList.find(s => s.id === item.statut)?.badge, 'px-2 py-0.5 rounded text-[10px] font-bold border inline-block']">
+                      {{ prospectStatusList.find(s => s.id === item.statut)?.label || item.statut }}
+                    </span>
+                  </td>
+
+                  <td class="p-3.5 text-right align-top whitespace-nowrap">
+                    <div class="flex items-center justify-end gap-1.5">
+                      <button 
+                        @click="openEditProspect(item)"
+                        class="text-slate-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+                        title="Modifier"
+                      >
+                        <i class="fa-solid fa-pen text-xs"></i>
+                      </button>
+                      <button 
+                        @click="deleteProspect(item.id)" 
+                        class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                        title="Supprimer"
+                      >
+                        <i class="fa-solid fa-trash text-xs"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr v-if="filteredProspects.length === 0">
+                  <td colspan="7" class="p-8 text-center text-slate-400 italic text-xs">
+                    Aucune entreprise enregistrée pour ce filtre.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 2. BESOINS À FAIRE SPONSORISER -->
+        <div v-if="currentSponsorSubTab === 'besoins'" class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-boxes-packing text-emerald-600"></i>
+                <span>Besoins matériels délégués à la sponsorisation</span>
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Validez pour créer directement une tâche dans la colonne "À faire" de votre Kanban.
               </p>
             </div>
             <span class="px-3 py-1 bg-amber-100 text-amber-900 font-bold rounded-full text-xs">
@@ -1624,7 +1929,7 @@ onMounted(async () => {
             </span>
           </div>
 
-          <div v-if="sponsorMaterialRequests.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+          <div v-if="sponsorMaterialRequests.length === 0" class="text-center py-12 text-slate-400 text-xs italic">
             Aucun matériel n'est actuellement délégué à la recherche de sponsors.
           </div>
 
@@ -1687,10 +1992,13 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- SECTION : GESTION DES PARTENAIRES DE LA COURSE -->
-        <div class="space-y-4">
+        <!-- 3. PARTENAIRES DE LA PAGE PRINCIPALE -->
+        <div v-if="currentSponsorSubTab === 'partenaires'" class="space-y-4">
           <div class="flex justify-between items-center">
-            <h3 class="text-lg font-black text-slate-900">Partenaires et Sponsors officiels</h3>
+            <div>
+              <h3 class="text-lg font-black text-slate-900">Sponsors officiels affichés sur le site</h3>
+              <p class="text-xs text-slate-500 mt-0.5">Ces logos et descriptions apparaissent directement sur la page d'accueil.</p>
+            </div>
             <button 
               @click="openCreateSponsor" 
               class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
@@ -1737,7 +2045,7 @@ onMounted(async () => {
           </div>
 
           <div v-if="sponsors.length === 0" class="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
-            Aucun partenaire enregistré.
+            Aucun sponsor officiel enregistré pour l'instant.
           </div>
         </div>
 
@@ -1920,6 +2228,7 @@ onMounted(async () => {
               class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-emerald-600"
             />
           </div>
+
           <div>
             <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre de participants inscrits</label>
             <input 
@@ -1930,6 +2239,7 @@ onMounted(async () => {
               class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-emerald-600"
             />
           </div>
+
           <button 
             @click="handleSaveFundraising"
             :disabled="updatingFundraising"
@@ -2056,7 +2366,6 @@ onMounted(async () => {
           </select>
         </div>
 
-        <!-- SÉLECTEUR DE COULEUR DE BORDURE -->
         <div>
           <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Couleur du contour</label>
           <div class="flex items-center gap-2 flex-wrap">
@@ -2432,16 +2741,18 @@ onMounted(async () => {
     </div>
   </div>
 
-  <!-- MODALE CRÉATION SPONSOR -->
+  <!-- MODALE CRÉATION SPONSOR DE LA PAGE PRINCIPALE -->
   <div v-if="showSponsorModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative">
       <button @click="showSponsorModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
         <i class="fa-solid fa-xmark text-lg"></i>
       </button>
       <h3 class="text-lg font-black text-slate-900 mb-1">
-        {{ editingSponsor ? 'Modifier le sponsor' : 'Nouveau sponsor' }}
+        {{ editingSponsor ? 'Modifier le sponsor officiel' : 'Nouveau sponsor officiel' }}
       </h3>
-      <div class="space-y-4 mt-4">
+      <p class="text-xs text-slate-500 mb-4">Ce logo apparaîtra sur la page d'accueil du site.</p>
+      
+      <div class="space-y-4">
         <div>
           <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nom</label>
           <input v-model="sponsorForm.nom" type="text" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
@@ -2458,6 +2769,126 @@ onMounted(async () => {
           {{ editingSponsor ? 'Enregistrer' : 'Créer' }}
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODALE : AJOUT / MODIFICATION D'ENTREPRISE PROSPECTION -->
+  <div v-if="showProspectModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <button @click="showProspectModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <h3 class="text-xl font-black text-slate-900 mb-1">
+        {{ editingProspect ? 'Modifier l’entreprise' : 'Nouvelle entreprise à démarcher' }}
+      </h3>
+      <p class="text-xs text-slate-500 mb-4">Renseignez les coordonnées et le contact interne à l'association.</p>
+
+      <form @submit.prevent="saveProspect" class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nom de l'entreprise *</label>
+          <input 
+            v-model="prospectForm.nom_entreprise" 
+            required 
+            type="text" 
+            placeholder="Ex. Super U, Décathlon, Entreprise Bâtiment..." 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Personne contact</label>
+            <input 
+              v-model="prospectForm.nom_contact" 
+              type="text" 
+              placeholder="Ex. M. Dupont (Directeur)" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Connu par quelqu'un de l'asso ?</label>
+            <input 
+              v-model="prospectForm.contact_asso" 
+              type="text" 
+              placeholder="Ex. Connaissance de Lucie, oncle de Thomas..." 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Numéro de téléphone</label>
+            <input 
+              v-model="prospectForm.telephone" 
+              type="tel" 
+              placeholder="06 12 34 56 78" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Adresse e-mail</label>
+            <input 
+              v-model="prospectForm.email" 
+              type="email" 
+              placeholder="contact@entreprise.fr" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Adresse postale</label>
+          <input 
+            v-model="prospectForm.adresse_postale" 
+            type="text" 
+            placeholder="Ex. 12 rue du Commerce, 37000 Tours" 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Qui la contacte / responsable</label>
+            <input 
+              v-model="prospectForm.responsable" 
+              type="text" 
+              placeholder="Ex. Thomas, Lucie..." 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600" 
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Statut démarche</label>
+            <select 
+              v-model="prospectForm.statut" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-600 bg-white"
+            >
+              <option v-for="st in prospectStatusList" :key="st.id" :value="st.id">{{ st.label }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Remarques / Historique d'échanges</label>
+          <textarea 
+            v-model="prospectForm.notes" 
+            rows="3" 
+            placeholder="Ex. Appel passé le 10/11, envoyer plaquette mécénat par mail avant vendredi..." 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-emerald-600"
+          ></textarea>
+        </div>
+
+        <button 
+          type="submit" 
+          class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer mt-2"
+        >
+          {{ editingProspect ? 'Enregistrer les modifications' : 'Ajouter à l’annuaire' }}
+        </button>
+      </form>
     </div>
   </div>
 
