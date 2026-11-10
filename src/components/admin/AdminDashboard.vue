@@ -1026,22 +1026,50 @@ const openEditSponsor = (s) => {
 };
 
 const handleSaveSponsor = async () => {
-  if (!sponsorForm.value.nom) return;
-  if (editingSponsor.value) {
-    const { error } = await supabase.from('sponsors').update(sponsorForm.value).eq('id', editingSponsor.value.id);
-    if (!error) {
+  if (!sponsorForm.value.nom || !sponsorForm.value.nom.trim()) {
+    triggerToast('Le nom du partenaire est obligatoire.');
+    return;
+  }
+
+  const payload = {
+    nom: sponsorForm.value.nom.trim(),
+    description: sponsorForm.value.description ? sponsorForm.value.description.trim() : null,
+    logo_url: sponsorForm.value.logo_url ? sponsorForm.value.logo_url.trim() : null
+  };
+
+  try {
+    if (editingSponsor.value) {
+      const { data, error } = await supabase
+        .from('sponsors')
+        .update(payload)
+        .eq('id', editingSponsor.value.id)
+        .select();
+
+      if (error) throw error;
+
       const idx = sponsors.value.findIndex(s => s.id === editingSponsor.value.id);
-      if (idx !== -1) sponsors.value[idx] = { ...editingSponsor.value, ...sponsorForm.value };
+      if (idx !== -1 && data && data.length > 0) {
+        sponsors.value[idx] = data[0];
+      }
       showSponsorModal.value = false;
       triggerToast('Sponsor mis à jour.');
-    }
-  } else {
-    const { data, error } = await supabase.from('sponsors').insert([sponsorForm.value]).select();
-    if (!error && data) {
-      sponsors.value.push(data[0]);
+    } else {
+      const { data, error } = await supabase
+        .from('sponsors')
+        .insert([payload])
+        .select();
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        sponsors.value.push(data[0]);
+      }
       showSponsorModal.value = false;
-      triggerToast('Sponsor ajouté.');
+      triggerToast('Sponsor officiel ajouté.');
     }
+  } catch (err) {
+    console.error('Erreur Supabase sponsors :', err);
+    triggerToast(`Erreur : ${err.message || 'Impossible d\'enregistrer le sponsor'}`);
   }
 };
 
