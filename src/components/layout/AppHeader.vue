@@ -8,6 +8,15 @@ const closeMenu = () => (isMobileMenuOpen.value = false);
 </script>
 
 <template>
+<!-- Bandeau d'information : Ouverture des inscriptions -->
+<div class="bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-700 text-white py-2.5 px-4 text-center text-xs sm:text-sm font-semibold tracking-wide shadow-sm flex items-center justify-center gap-2">
+  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/20 text-white text-[11px]">
+    <i class="fa-solid fa-bell"></i>
+  </span>
+  <span>
+    À vos baskets ! Les inscriptions ouvrent officiellement le <strong class="underline decoration-white/60 font-black">14 décembre 2026</strong>.
+  </span>
+</div>
   <header
     class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200"
   >
