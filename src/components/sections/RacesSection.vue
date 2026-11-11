@@ -84,7 +84,14 @@ const openDetails = (epreuve) => {
 <template>
   <section id="epreuves" class="py-12 bg-transparent">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      
+      <div class="text-center max-w-2xl mx-auto mb-14">
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-3">
+          Nos parcours
+        </h2>
+        <p class="text-slate-600 mt-2 text-sm sm:text-base">
+          Notre évènement est ouvert à tous! Chacun peut trouver son parcours adapté.
+        </p>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
         <div 
           v-for="epreuve in epreuves" 

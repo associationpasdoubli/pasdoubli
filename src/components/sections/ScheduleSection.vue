@@ -9,42 +9,49 @@ const morningSchedule = [
   {
     time: '08h00',
     title: 'Ouverture du site aux bénévoles',
-    desc: 'Briefing des signaleurs, poste Croix-Rouge et balisages finaux.',
+    desc: 'Briefing des signaleurs, poste de la Protection Civile et balisages finaux.',
     details: 'Accueil des bénévoles avec collation, répartition des postes stratégiques sur les parcours et vérification des dispositifs de sécurité.'
   },
   {
     time: '08h30',
     title: 'Accueil des participants & Retrait des dossards',
     desc: "Café d'accueil et inauguration de l'espace France Alzheimer 37.",
-    details: "Retrait des dossards sur présentation d'une pièce d'identité et de l'attestation PPS. Café et viennoiseries offerts."
+    details: "Retrait des dossards sur présentation d'une pièce d'identité et de l'attestation PPS. Café et viennoiseries disponibles."
   },
   {
-    time: '09h00',
+    time: 'à définir',
     tag: 'Départ',
-    title: 'Marche Solidaire 6 km',
-    desc: 'Départ groupé pour les marcheurs, familles et poussettes dans les sentiers.',
-    details: 'Circuit nature accessible à tous les rythmes sans certificat médical. 1 ravitaillement prévu sur le tracé.'
+    title: 'Marche 6 km',
+    desc: 'Départ groupé pour les marcheurs, familles et poussettes.',
+    details: 'Circuit nature accessible à tous les rythmes sans certificat médical.'
   },
   {
-    time: '09h45',
+    time: 'à définir',
     tag: 'Départ',
-    title: 'Course Nature 10 km',
-    desc: 'Épreuve reine chronométrée au cœur des coteaux et des sentiers athégiens.',
-    details: 'Tracé vallonné alternant routes communales et chemins de terre. Parcours chronométré avec puce électronique.'
+    title: 'Course 10 km',
+    desc: 'Épreuve chronométrée',
+    details: 'Tracé vallonné sur les routes communales dont un chemin de terre.'
   },
   {
-    time: '10h00',
+    time: 'à définir',
     tag: 'Départ',
-    title: 'Course Populaire 6 km',
-    desc: "L'épreuve rapide et festive ouverte aux coureurs réguliers comme débutants.",
-    details: 'Boucle accessible dès 14 ans. Ambiance festive et ravitaillement gourmand à l’arrivée.'
+    title: 'Course 6 km',
+    desc: "Épreuve chronométrée",
+    details: 'Tracé vallonné sur les routes communales.'
   },
   {
-    time: '11h00',
-    tag: 'Départs Jeunesse',
-    title: 'Courses 3 km & 1,5 km Enfants',
-    desc: 'Encadrement assuré par le Centre de Loisirs. Médaille souvenir à l\'arrivée.',
-    details: 'Épreuves entièrement sécurisées dans le centre-bourg avec remise de médailles pour chaque jeune arrivant.'
+    time: 'à définir',
+    tag: 'Départs',
+    title: 'Courses 3 km ',
+    desc: 'Parcours ado dans la ville.',
+    details: 'Épreuves entièrement sécurisées dans le centre-bourg.'
+  },
+  {
+    time: 'à définir',
+    tag: 'Départs',
+    title: 'Courses 1,5 km Enfants',
+    desc: 'Parcours découvertes dans la ville.',
+    details: 'Épreuves entièrement sécurisées dans le centre-bourg.'
   }
 ];
 
@@ -53,8 +60,8 @@ const afternoonSchedule = [
     time: '12h15',
     tag: 'Convivialité',
     title: 'Déjeuner Partagé, Buvette & Crêpes',
-    desc: 'Restauration sur place et stand crêpes des jeunes du Centre Aéré.',
-    details: 'Restauration locale, tables de pique-nique et vente de crêpes au profit du séjour d’été des enfants.'
+    desc: 'Restauration sur place et stands.',
+    details: 'Restauration locale, tables et vente de gateaux et produits locaux.'
   },
   {
     time: '13h45',

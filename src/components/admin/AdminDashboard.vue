@@ -4,7 +4,6 @@ import { supabase } from '../../services/supabase';
 import { useToast } from '../../composables/useToast';
 
 const { triggerToast } = useToast();
-const fundraisingParticipants = ref(0);
 
 // ================= AUTHENTIFICATION & RÔLES ================= //
 const user = ref(null);
@@ -46,7 +45,7 @@ const userRoleTitle = computed(() => {
   return roleMap[currentRole.value] || 'Membre Association';
 });
 
-// ================= PÔLES & GESTION KANBAN ================= //
+// ================= PÔLES & GESTION DES ACCÈS ================= //
 const allPoles = [
   { id: 'direction', label: 'Direction', icon: 'fa-crown' },
   { id: 'animation', label: 'Animation', icon: 'fa-bullhorn' },
@@ -79,9 +78,12 @@ const canAccessTab = (tab) => {
 };
 
 const currentTab = ref('poles');
+const currentSponsorSubTab = ref('annuaire'); // 'annuaire', 'besoins', 'partenaires'
 
-// Sous-onglets Pôle Sponsors
-const currentSponsorSubTab = ref('annuaire');
+// Droits spécifiques
+const isLogistiqueOrDirection = computed(() => isDirection.value || currentRole.value === 'logistique');
+const isTresorerieOrDirection = computed(() => isDirection.value || currentRole.value === 'tresorerie');
+const canDelegateToSponsors = computed(() => isDirection.value || currentRole.value === 'logistique' || currentRole.value === 'tresorerie');
 
 // ================= DONNÉES DU DASHBOARD ================= //
 const messages = ref([]);
@@ -91,9 +93,10 @@ const faqs = ref([]);
 const sponsors = ref([]);
 const fundraisingCurrent = ref(0);
 const fundraisingGoal = ref(5000);
+const fundraisingParticipants = ref(0);
 const updatingFundraising = ref(false);
 
-// Kanban
+// ================= KANBAN ================= //
 const tasks = ref([]);
 const steps = ref([]);
 const comments = ref([]);
@@ -131,7 +134,7 @@ const currentTaskDetail = ref(null);
 const newStepTitle = ref('');
 const newComment = ref('');
 
-// ================= GESTION DU MATÉRIEL & ARBITRAGE ================= //
+// ================= MATÉRIEL & ARBITRAGE ================= //
 const materialRequests = ref([]);
 const showMaterialModal = ref(false);
 const materialForm = ref({
@@ -166,14 +169,6 @@ const decisionStatusList = [
   { id: 'refuse', label: 'Refusé', badge: 'bg-rose-100 text-rose-900 border-rose-200' }
 ];
 
-const isLogistiqueOrDirection = computed(() => isDirection.value || currentRole.value === 'logistique');
-const isTresorerieOrDirection = computed(() => isDirection.value || currentRole.value === 'tresorerie');
-
-// Droit exclusif de déléguer aux sponsors
-const canDelegateToSponsors = computed(() => {
-  return isDirection.value || currentRole.value === 'logistique' || currentRole.value === 'tresorerie';
-});
-
 const filteredMaterialRequests = computed(() => {
   if (isLogistiqueOrDirection.value) return materialRequests.value;
   return materialRequests.value.filter(m => m.pole === currentRole.value);
@@ -183,10 +178,10 @@ const sponsorMaterialRequests = computed(() => {
   return materialRequests.value.filter(m => m.demande_sponsor === true);
 });
 
-// Le budget exclut les matériels sponsorisés (don direct d'entreprise)
+// Calcul du budget à décaisser : seul 'sponsor_trouve' déduit le coût à 0 €
 const totalEstimatedBudget = computed(() => {
   return materialRequests.value.reduce((acc, item) => {
-    if (item.statut_sponsor === 'pris_en_charge') return acc;
+    if (item.statut_sponsor === 'sponsor_trouve') return acc;
     if (item.estimated_price !== null && item.estimated_price !== undefined) {
       return acc + (Number(item.estimated_price) * (item.quantite || 1));
     }
@@ -205,91 +200,17 @@ const budgetSummaryByPole = computed(() => {
     if (!summary[pId]) {
       summary[pId] = { label: pId, total: 0, count: 0, validatedTotal: 0 };
     }
-    // Les articles sponsorisés n'impactent pas le budget financier
-    const isSponsored = item.statut_sponsor === 'pris_en_charge';
-    const cost = (item.estimated_price && !isSponsored) ? Number(item.estimated_price) * (item.quantite || 1) : 0;
+    const isTrouve = item.statut_sponsor === 'sponsor_trouve';
+    const cost = (item.estimated_price && !isTrouve) ? Number(item.estimated_price) * (item.quantite || 1) : 0;
     summary[pId].total += cost;
     summary[pId].count += 1;
-    if (item.avis_tresorerie === 'valide' && !isSponsored) {
+    if (item.avis_tresorerie === 'valide' && !isTrouve) {
       summary[pId].validatedTotal += cost;
     }
   });
 
   return Object.values(summary).filter(s => s.count > 0);
 });
-
-// ================= EXPORTS EXCEL (.CSV UTF-8) ================= //
-const exportToExcel = (type = 'logistique') => {
-  let csvContent = '\uFEFF';
-  let filename = '';
-
-  if (type === 'logistique') {
-    filename = `demandes_materiel_logistique_${new Date().toISOString().slice(0, 10)}.csv`;
-    csvContent += 'Pôle;Article / Commande;Quantité;Justification du Besoin;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Avis Logistique;Motif Logistique;Avis Trésorerie;Statut Sponsor;Date\n';
-
-    filteredMaterialRequests.value.forEach(req => {
-      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
-      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
-      const qte = req.quantite || 1;
-      const details = `"${(req.details || '').replace(/"/g, '""')}"`;
-      const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
-      const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '';
-      const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '';
-      const avisLog = `"${(req.statut_sponsor === 'pris_en_charge' ? 'Pris en charge par sponsor (0 €)' : (decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '')).replace(/"/g, '""')}"`;
-      const motifLog = `"${(req.reponse_logistique || '').replace(/"/g, '""')}"`;
-      const avisTresor = `"${(req.statut_sponsor === 'pris_en_charge' ? 'Pris en charge par sponsor (0 €)' : (decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente')).replace(/"/g, '""')}"`;
-      const statutSponsor = req.demande_sponsor ? (req.statut_sponsor === 'pris_en_charge' ? 'Pris en charge (Sponsor)' : (req.statut_sponsor === 'non_finance' ? 'Non sponsorisé (Rejeté)' : (req.statut_sponsor === 'refuse' ? 'Refusé Sponsor' : 'En recherche'))) : 'Non délégué';
-      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
-
-      csvContent += `${pole};${article};${qte};${details};${demandeur};${prix};${total};${avisLog};${motifLog};${avisTresor};${statutSponsor};${date}\n`;
-    });
-  } else if (type === 'tresorerie') {
-    filename = `budget_materiel_tresorerie_${new Date().toISOString().slice(0, 10)}.csv`;
-    csvContent += 'Pôle;Article;Quantité;Prix Unitaire (€);Montant Total Estimé (€);Avis Trésorerie;Justification Trésorerie;Avis Logistique;Statut Sponsor;Demandeur;Date\n';
-
-    materialRequests.value.forEach(req => {
-      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
-      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
-      const qte = req.quantite || 1;
-      const isSponsored = req.statut_sponsor === 'pris_en_charge';
-      const prix = isSponsored ? '0,00' : (req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '0,00');
-      const total = isSponsored ? '0,00' : (req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '0,00');
-      const avisTresor = `"${(isSponsored ? 'Pris en charge par sponsor (0 €)' : (decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente')).replace(/"/g, '""')}"`;
-      const motifTresor = `"${(req.reponse_tresorerie || '').replace(/"/g, '""')}"`;
-      const avisLog = `"${(isSponsored ? 'Pris en charge par sponsor (0 €)' : (decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '')).replace(/"/g, '""')}"`;
-      const statutSponsor = req.demande_sponsor ? (isSponsored ? 'Pris en charge' : req.statut_sponsor) : 'Non';
-      const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
-      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
-
-      csvContent += `${pole};${article};${qte};${prix};${total};${avisTresor};${motifTresor};${avisLog};${statutSponsor};${demandeur};${date}\n`;
-    });
-  } else if (type === 'sponsor_besoins') {
-    filename = `suivi_materiel_sponsoring_${new Date().toISOString().slice(0, 10)}.csv`;
-    csvContent += 'Pôle Demandeur;Matériel;Quantité;Coût Indicatif Unitaire (€);Coût Total Économisé (€);Justification;Statut Sponsoring;Date Demande\n';
-
-    sponsorMaterialRequests.value.forEach(req => {
-      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
-      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
-      const qte = req.quantite || 1;
-      const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '';
-      const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '';
-      const details = `"${(req.details || '').replace(/"/g, '""')}"`;
-      const statut = req.statut_sponsor === 'pris_en_charge' ? 'Sponsorisé (Validé)' : (req.statut_sponsor === 'non_finance' ? 'Non sponsorisé (Abandonné)' : (req.statut_sponsor === 'refuse' ? 'Refusé' : 'En recherche active'));
-      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
-
-      csvContent += `${pole};${article};${qte};${prix};${total};${details};"${statut}";${date}\n`;
-    });
-  }
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  triggerToast('Export Excel téléchargé !');
-};
 
 // ================= ANNUAIRE PROSPECTION SPONSORS ================= //
 const sponsorProspects = ref([]);
@@ -317,109 +238,12 @@ const prospectStatusList = [
   { id: 'refuse', label: 'Refusé', badge: 'bg-rose-100 text-rose-900 border-rose-200' }
 ];
 
-const fetchSponsorProspects = async () => {
-  const { data, error } = await supabase
-    .from('sponsor_prospects')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (data && !error) sponsorProspects.value = data;
-};
-
 const filteredProspects = computed(() => {
   if (prospectFilter.value === 'all') return sponsorProspects.value;
   return sponsorProspects.value.filter(p => p.statut === prospectFilter.value);
 });
 
-const openCreateProspect = () => {
-  editingProspect.value = null;
-  prospectForm.value = {
-    nom_entreprise: '',
-    nom_contact: '',
-    contact_asso: '',
-    telephone: '',
-    email: '',
-    adresse_postale: '',
-    responsable: userRoleTitle.value,
-    statut: 'a_contacter',
-    notes: ''
-  };
-  showProspectModal.value = true;
-};
-
-const openEditProspect = (item) => {
-  editingProspect.value = item;
-  prospectForm.value = {
-    nom_entreprise: item.nom_entreprise || '',
-    nom_contact: item.nom_contact || '',
-    contact_asso: item.contact_asso || '',
-    telephone: item.telephone || '',
-    email: item.email || '',
-    adresse_postale: item.adresse_postale || '',
-    responsable: item.responsable || '',
-    statut: item.statut || 'a_contacter',
-    notes: item.notes || ''
-  };
-  showProspectModal.value = true;
-};
-
-const saveProspect = async () => {
-  if (!prospectForm.value.nom_entreprise || !prospectForm.value.nom_entreprise.trim()) {
-    triggerToast("Le nom de l'entreprise est obligatoire.");
-    return;
-  }
-
-  const payload = {
-    nom_entreprise: prospectForm.value.nom_entreprise.trim(),
-    nom_contact: prospectForm.value.nom_contact?.trim() || null,
-    contact_asso: prospectForm.value.contact_asso?.trim() || null,
-    telephone: prospectForm.value.telephone?.trim() || null,
-    email: prospectForm.value.email?.trim() || null,
-    adresse_postale: prospectForm.value.adresse_postale?.trim() || null,
-    responsable: prospectForm.value.responsable?.trim() || null,
-    statut: prospectForm.value.statut,
-    notes: prospectForm.value.notes?.trim() || null
-  };
-
-  if (editingProspect.value) {
-    const { error } = await supabase
-      .from('sponsor_prospects')
-      .update(payload)
-      .eq('id', editingProspect.value.id);
-
-    if (!error) {
-      const idx = sponsorProspects.value.findIndex(p => p.id === editingProspect.value.id);
-      if (idx !== -1) sponsorProspects.value[idx] = { ...sponsorProspects.value[idx], ...payload };
-      showProspectModal.value = false;
-      triggerToast('Entreprise mise à jour !');
-    } else {
-      triggerToast('Erreur lors de la mise à jour.');
-    }
-  } else {
-    const { data, error } = await supabase
-      .from('sponsor_prospects')
-      .insert([payload])
-      .select();
-
-    if (!error && data) {
-      sponsorProspects.value.unshift(data[0]);
-      showProspectModal.value = false;
-      triggerToast('Entreprise ajoutée à l’annuaire !');
-    } else {
-      triggerToast('Erreur lors de l’ajout.');
-    }
-  }
-};
-
-const deleteProspect = async (id) => {
-  if (!confirm('Supprimer définitivement ce contact d’entreprise ?')) return;
-  const { error } = await supabase.from('sponsor_prospects').delete().eq('id', id);
-  if (!error) {
-    sponsorProspects.value = sponsorProspects.value.filter(p => p.id !== id);
-    triggerToast('Contact supprimé.');
-  }
-};
-
-// Modales FAQ & Sponsors
+// ================= MODALES FAQ & SPONSORS OFFICIELS ================= //
 const showFaqModal = ref(false);
 const faqForm = ref({ question: '', reponse: '' });
 
@@ -803,7 +627,6 @@ const submitMaterialRequest = async () => {
   }
 };
 
-// Seuls Trésorerie, Logistique et Direction peuvent déléguer aux sponsors
 const askSponsorsForMaterial = async (item) => {
   if (!canDelegateToSponsors.value) {
     triggerToast('Seule la logistique, la trésorerie ou la direction peuvent déléguer.');
@@ -829,8 +652,9 @@ const askSponsorsForMaterial = async (item) => {
   }
 };
 
-// Réponse du Pôle Sponsors (Acceptation / Refus / Abandon)
+// Cycle de décision complet du Pôle Sponsors
 const handleSponsorResponse = async (item, decision) => {
+  // 1. Refus de chercher
   if (decision === 'refuse') {
     const { error } = await supabase
       .from('material_requests')
@@ -844,8 +668,8 @@ const handleSponsorResponse = async (item, decision) => {
     return;
   }
 
-  if (decision === 'valide') {
-    // Si accepté : pris en charge par sponsor -> logistique et trésorerie n'ont plus à valider
+  // 2. Accepte de chercher -> en_recherche + création post-it dans "À faire"
+  if (decision === 'accepte_recherche') {
     const taskTitle = `Recherche sponsor : ${item.article} (x${item.quantite})`;
     const taskDesc = `Matériel : ${item.article} (x${item.quantite}) demandé par ${item.pole}.
 Justification : ${item.details}
@@ -872,28 +696,44 @@ Prix estimé : ${item.estimated_price ? `${item.estimated_price} €/u` : 'Incon
 
     const { error: reqError } = await supabase
       .from('material_requests')
+      .update({ statut_sponsor: 'en_recherche' })
+      .eq('id', item.id);
+
+    if (!reqError) {
+      item.statut_sponsor = 'en_recherche';
+      if (createdTask && createdTask.length > 0) {
+        tasks.value.push(createdTask[0]);
+      }
+      triggerToast('Recherche acceptée ! Post-it créé dans "À faire".');
+    }
+    return;
+  }
+
+  // 3. Partenaire trouvé -> sponsor_trouve (validation automatique sans débourser d'argent)
+  if (decision === 'trouve') {
+    const { error } = await supabase
+      .from('material_requests')
       .update({
-        statut_sponsor: 'pris_en_charge',
+        statut_sponsor: 'sponsor_trouve',
         avis_logistique: 'pris_en_charge',
         avis_tresorerie: 'pris_en_charge'
       })
       .eq('id', item.id);
 
-    if (!reqError) {
-      item.statut_sponsor = 'pris_en_charge';
+    if (!error) {
+      item.statut_sponsor = 'sponsor_trouve';
       item.avis_logistique = 'pris_en_charge';
       item.avis_tresorerie = 'pris_en_charge';
-      if (createdTask && createdTask.length > 0) {
-        tasks.value.push(createdTask[0]);
-      }
-      triggerToast('Pris en charge ! Post-it créé dans "À faire".');
+      triggerToast('Sponsor validé ! Matériel financé à 0 €.');
+    } else {
+      triggerToast('Erreur lors de la validation.');
     }
     return;
   }
 
-  // Rétractation : le sponsor n'a finalement pas trouvé de partenaire
+  // 4. Abandon / Rétractation -> non_finance (la trésorerie et la logistique reprennent la main)
   if (decision === 'abandon') {
-    if (!confirm('Confirmez-vous que vous n\'avez pas pu faire sponsoriser ce matériel ? La logistique et la trésorerie devront reprendre la main.')) {
+    if (!confirm('Déclarer que ce matériel n\'a pas pu être sponsorisé ? La logistique et la trésorerie devront reprendre la main et valider l\'achat.')) {
       return;
     }
 
@@ -910,9 +750,9 @@ Prix estimé : ${item.estimated_price ? `${item.estimated_price} €/u` : 'Incon
       item.statut_sponsor = 'non_finance';
       item.avis_logistique = 'en_attente';
       item.avis_tresorerie = 'en_attente';
-      triggerToast('Décision modifiée : matériel marqué non sponsorisé. La logistique & la trésorerie doivent arbitrer.');
+      triggerToast('Marqué non sponsorisé. Renvoi à la logistique et trésorerie.');
     } else {
-      triggerToast('Erreur lors de la modification.');
+      triggerToast('Erreur lors de la mise à jour.');
     }
   }
 };
@@ -969,7 +809,7 @@ const saveEditedMaterial = async () => {
 };
 
 const openDecisionModal = (item, type) => {
-  if (item.statut_sponsor === 'pris_en_charge') {
+  if (item.statut_sponsor === 'sponsor_trouve') {
     triggerToast('Ce besoin est pris en charge par un sponsor (aucun arbitrage requis).');
     return;
   }
@@ -1038,7 +878,178 @@ const deleteMaterialRequest = async (id) => {
   }
 };
 
-// ================= AUTRES ACTIONS ================= //
+// ================= GESTION ANNUAIRE PROSPECTION ================= //
+const fetchSponsorProspects = async () => {
+  const { data, error } = await supabase
+    .from('sponsor_prospects')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (data && !error) sponsorProspects.value = data;
+};
+
+const openCreateProspect = () => {
+  editingProspect.value = null;
+  prospectForm.value = {
+    nom_entreprise: '',
+    nom_contact: '',
+    contact_asso: '',
+    telephone: '',
+    email: '',
+    adresse_postale: '',
+    responsable: userRoleTitle.value,
+    statut: 'a_contacter',
+    notes: ''
+  };
+  showProspectModal.value = true;
+};
+
+const openEditProspect = (item) => {
+  editingProspect.value = item;
+  prospectForm.value = {
+    nom_entreprise: item.nom_entreprise || '',
+    nom_contact: item.nom_contact || '',
+    contact_asso: item.contact_asso || '',
+    telephone: item.telephone || '',
+    email: item.email || '',
+    adresse_postale: item.adresse_postale || '',
+    responsable: item.responsable || '',
+    statut: item.statut || 'a_contacter',
+    notes: item.notes || ''
+  };
+  showProspectModal.value = true;
+};
+
+const saveProspect = async () => {
+  if (!prospectForm.value.nom_entreprise || !prospectForm.value.nom_entreprise.trim()) {
+    triggerToast("Le nom de l'entreprise est obligatoire.");
+    return;
+  }
+
+  const payload = {
+    nom_entreprise: prospectForm.value.nom_entreprise.trim(),
+    nom_contact: prospectForm.value.nom_contact?.trim() || null,
+    contact_asso: prospectForm.value.contact_asso?.trim() || null,
+    telephone: prospectForm.value.telephone?.trim() || null,
+    email: prospectForm.value.email?.trim() || null,
+    adresse_postale: prospectForm.value.adresse_postale?.trim() || null,
+    responsable: prospectForm.value.responsable?.trim() || null,
+    statut: prospectForm.value.statut,
+    notes: prospectForm.value.notes?.trim() || null
+  };
+
+  if (editingProspect.value) {
+    const { error } = await supabase
+      .from('sponsor_prospects')
+      .update(payload)
+      .eq('id', editingProspect.value.id);
+
+    if (!error) {
+      const idx = sponsorProspects.value.findIndex(p => p.id === editingProspect.value.id);
+      if (idx !== -1) sponsorProspects.value[idx] = { ...sponsorProspects.value[idx], ...payload };
+      showProspectModal.value = false;
+      triggerToast('Entreprise mise à jour !');
+    } else {
+      triggerToast('Erreur lors de la mise à jour.');
+    }
+  } else {
+    const { data, error } = await supabase
+      .from('sponsor_prospects')
+      .insert([payload])
+      .select();
+
+    if (!error && data) {
+      sponsorProspects.value.unshift(data[0]);
+      showProspectModal.value = false;
+      triggerToast('Entreprise ajoutée à l’annuaire !');
+    } else {
+      triggerToast('Erreur lors de l’ajout.');
+    }
+  }
+};
+
+const deleteProspect = async (id) => {
+  if (!confirm('Supprimer définitivement ce contact d’entreprise ?')) return;
+  const { error } = await supabase.from('sponsor_prospects').delete().eq('id', id);
+  if (!error) {
+    sponsorProspects.value = sponsorProspects.value.filter(p => p.id !== id);
+    triggerToast('Contact supprimé.');
+  }
+};
+
+// ================= EXPORTS EXCEL ================= //
+const exportToExcel = (type = 'logistique') => {
+  let csvContent = '\uFEFF';
+  let filename = '';
+
+  if (type === 'logistique') {
+    filename = `demandes_materiel_logistique_${new Date().toISOString().slice(0, 10)}.csv`;
+    csvContent += 'Pôle;Article / Commande;Quantité;Justification du Besoin;Demandeur;Prix Estimé Unitaire (€);Total Estimé (€);Avis Logistique;Motif Logistique;Avis Trésorerie;Statut Sponsor;Date\n';
+
+    filteredMaterialRequests.value.forEach(req => {
+      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
+      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
+      const qte = req.quantite || 1;
+      const details = `"${(req.details || '').replace(/"/g, '""')}"`;
+      const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
+      const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '';
+      const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '';
+      const avisLog = `"${(req.statut_sponsor === 'sponsor_trouve' ? 'Sponsorisé (0 €)' : (decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '')).replace(/"/g, '""')}"`;
+      const motifLog = `"${(req.reponse_logistique || '').replace(/"/g, '""')}"`;
+      const avisTresor = `"${(req.statut_sponsor === 'sponsor_trouve' ? 'Sponsorisé (0 €)' : (decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente')).replace(/"/g, '""')}"`;
+      const statutSponsor = req.demande_sponsor ? (req.statut_sponsor === 'sponsor_trouve' ? 'Sponsorisé (Validé)' : (req.statut_sponsor === 'en_recherche' ? 'Recherche en cours' : (req.statut_sponsor === 'non_finance' ? 'Non sponsorisé' : (req.statut_sponsor === 'refuse' ? 'Refusé Sponsor' : 'En attente')))) : 'Non délégué';
+      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
+
+      csvContent += `${pole};${article};${qte};${details};${demandeur};${prix};${total};${avisLog};${motifLog};${avisTresor};${statutSponsor};${date}\n`;
+    });
+  } else if (type === 'tresorerie') {
+    filename = `budget_materiel_tresorerie_${new Date().toISOString().slice(0, 10)}.csv`;
+    csvContent += 'Pôle;Article;Quantité;Prix Unitaire (€);Montant Total Estimé (€);Avis Trésorerie;Justification Trésorerie;Avis Logistique;Statut Sponsor;Demandeur;Date\n';
+
+    materialRequests.value.forEach(req => {
+      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
+      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
+      const qte = req.quantite || 1;
+      const isSponsored = req.statut_sponsor === 'sponsor_trouve';
+      const prix = isSponsored ? '0,00' : (req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '0,00');
+      const total = isSponsored ? '0,00' : (req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '0,00');
+      const avisTresor = `"${(isSponsored ? 'Sponsorisé (0 €)' : (decisionStatusList.find(s => s.id === req.avis_tresorerie)?.label || 'En attente')).replace(/"/g, '""')}"`;
+      const motifTresor = `"${(req.reponse_tresorerie || '').replace(/"/g, '""')}"`;
+      const avisLog = `"${(isSponsored ? 'Sponsorisé (0 €)' : (decisionStatusList.find(s => s.id === (req.avis_logistique || req.status))?.label || '')).replace(/"/g, '""')}"`;
+      const statutSponsor = req.demande_sponsor ? (req.statut_sponsor === 'sponsor_trouve' ? 'Sponsorisé' : (req.statut_sponsor === 'en_recherche' ? 'En recherche' : (req.statut_sponsor === 'non_finance' ? 'Non sponsorisé' : req.statut_sponsor))) : 'Non';
+      const demandeur = `"${(req.demandeur || '').replace(/"/g, '""')}"`;
+      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
+
+      csvContent += `${pole};${article};${qte};${prix};${total};${avisTresor};${motifTresor};${avisLog};${statutSponsor};${demandeur};${date}\n`;
+    });
+  } else if (type === 'sponsor_besoins') {
+    filename = `suivi_materiel_sponsoring_${new Date().toISOString().slice(0, 10)}.csv`;
+    csvContent += 'Pôle Demandeur;Matériel;Quantité;Coût Indicatif Unitaire (€);Coût Total Économisé (€);Justification;Statut Sponsoring;Date Demande\n';
+
+    sponsorMaterialRequests.value.forEach(req => {
+      const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
+      const article = `"${(req.article || '').replace(/"/g, '""')}"`;
+      const qte = req.quantite || 1;
+      const prix = req.estimated_price ? Number(req.estimated_price).toFixed(2).replace('.', ',') : '';
+      const total = req.estimated_price ? (Number(req.estimated_price) * qte).toFixed(2).replace('.', ',') : '';
+      const details = `"${(req.details || '').replace(/"/g, '""')}"`;
+      const statut = req.statut_sponsor === 'sponsor_trouve' ? 'Sponsor trouvé (Validé)' : (req.statut_sponsor === 'en_recherche' ? 'Recherche en cours' : (req.statut_sponsor === 'non_finance' ? 'Non sponsorisé (Abandonné)' : (req.statut_sponsor === 'refuse' ? 'Refusé' : 'Nouveau besoin')));
+      const date = req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : '';
+
+      csvContent += `${pole};${article};${qte};${prix};${total};${details};"${statut}";${date}\n`;
+    });
+  }
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  triggerToast('Export Excel téléchargé !');
+};
+
+// ================= ACTIONS MESSAGES / BÉNÉVOLES / FAQ / SPONSORS / CAGNOTTE ================= //
 const selectMsg = async (msg) => {
   selectedMessage.value = msg;
   if (!msg.read) {
@@ -1531,7 +1542,7 @@ onMounted(async () => {
                   <th class="p-4 w-32">Prix indicatif</th>
                   <th class="p-4 w-40">Avis Logistique</th>
                   <th class="p-4 w-40">Avis Trésorerie</th>
-                  <th class="p-4 w-36">Sponsors</th>
+                  <th class="p-4 w-44">Sponsors</th>
                   <th class="p-4 text-right w-24">Actions</th>
                 </tr>
               </thead>
@@ -1562,8 +1573,8 @@ onMounted(async () => {
                   </td>
 
                   <td class="p-4 whitespace-nowrap align-top">
-                    <div v-if="item.statut_sponsor === 'pris_en_charge'">
-                      <span class="px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded text-[11px] font-bold">
+                    <div v-if="item.statut_sponsor === 'sponsor_trouve'">
+                      <span class="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[11px] font-bold">
                         0.00 € (Sponsorisé)
                       </span>
                     </div>
@@ -1578,9 +1589,9 @@ onMounted(async () => {
                     <span v-else class="text-slate-400 italic text-[11px]">Non renseigné</span>
                   </td>
 
-                  <!-- AVIS LOGISTIQUE : DÉSACTIVÉ SI SPONSORISÉ -->
+                  <!-- AVIS LOGISTIQUE -->
                   <td class="p-4 align-top">
-                    <div v-if="item.statut_sponsor === 'pris_en_charge'" class="text-purple-700 font-bold text-xs flex items-center gap-1.5">
+                    <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
                       <span>Pris en charge par sponsor</span>
                     </div>
@@ -1602,9 +1613,9 @@ onMounted(async () => {
                     </div>
                   </td>
 
-                  <!-- AVIS TRÉSORERIE : DÉSACTIVÉ SI SPONSORISÉ -->
+                  <!-- AVIS TRÉSORERIE -->
                   <td class="p-4 align-top">
-                    <div v-if="item.statut_sponsor === 'pris_en_charge'" class="text-purple-700 font-bold text-xs flex items-center gap-1.5">
+                    <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
                       <span>Don sponsor (0 € asso)</span>
                     </div>
@@ -1619,27 +1630,39 @@ onMounted(async () => {
                     </div>
                   </td>
 
-                  <!-- STATUT SPONSOR & BOUTON DÉLÉGUER RÉSERVÉ -->
+                  <!-- STATUT SPONSOR (DIFFÉRENCIÉ RECHERCHE / TROUVÉ) -->
                   <td class="p-4 align-top">
                     <div v-if="item.demande_sponsor">
-                      <span v-if="item.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 inline-block">
-                        <i class="fa-solid fa-handshake mr-1"></i>Sponsor trouvé
+                      <span v-if="item.statut_sponsor === 'sponsor_trouve'" class="px-2.5 py-1 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                        <i class="fa-solid fa-circle-check text-emerald-600"></i>
+                        <span>Sponsor trouvé</span>
                       </span>
-                      <span v-else-if="item.statut_sponsor === 'non_finance'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200 inline-block" title="Le pôle sponsor n'a pas pu trouver">
-                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>Non sponsorisé
+
+                      <span v-else-if="item.statut_sponsor === 'en_recherche'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                        <i class="fa-solid fa-magnifying-glass text-amber-600 animate-pulse"></i>
+                        <span>Recherche en cours</span>
                       </span>
-                      <span v-else-if="item.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200 inline-block">
-                        <i class="fa-solid fa-xmark mr-1"></i>Refusé Sponsor
+
+                      <span v-else-if="item.statut_sponsor === 'non_finance'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1" title="Aucun sponsor trouvé, achat sur fonds associatifs requis">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                        <span>Non sponsorisé</span>
                       </span>
-                      <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 inline-block">
-                        <i class="fa-solid fa-clock mr-1"></i>En négociation
+
+                      <span v-else-if="item.statut_sponsor === 'refuse'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
+                        <i class="fa-solid fa-ban text-rose-500"></i>
+                        <span>Refusé Sponsors</span>
+                      </span>
+
+                      <span v-else class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
+                        <i class="fa-regular fa-clock text-blue-500"></i>
+                        <span>En attente de prise en charge</span>
                       </span>
                     </div>
-                    <!-- Bouton réservé à la Logistique, Trésorerie et Direction -->
+
                     <button 
                       v-else-if="canDelegateToSponsors"
                       @click="askSponsorsForMaterial(item)"
-                      class="px-2 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                      class="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                       title="Déléguer ce besoin aux sponsors"
                     >
                       <i class="fa-solid fa-handshake"></i>
@@ -1742,7 +1765,7 @@ onMounted(async () => {
                   <th class="p-4 w-32">Prix indicatif</th>
                   <th class="p-4 w-40">Avis Logistique</th>
                   <th class="p-4 w-40">Avis Trésorerie</th>
-                  <th class="p-4 w-36">Sponsors</th>
+                  <th class="p-4 w-44">Sponsors</th>
                   <th class="p-4 text-right w-24">Actions</th>
                 </tr>
               </thead>
@@ -1773,8 +1796,8 @@ onMounted(async () => {
                   </td>
 
                   <td class="p-4 whitespace-nowrap align-top">
-                    <div v-if="item.statut_sponsor === 'pris_en_charge'">
-                      <span class="px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded text-[11px] font-bold">
+                    <div v-if="item.statut_sponsor === 'sponsor_trouve'">
+                      <span class="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[11px] font-bold">
                         0.00 € (Sponsorisé)
                       </span>
                     </div>
@@ -1790,7 +1813,7 @@ onMounted(async () => {
                   </td>
 
                   <td class="p-4 align-top">
-                    <div v-if="item.statut_sponsor === 'pris_en_charge'" class="text-purple-700 font-bold text-xs flex items-center gap-1.5">
+                    <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
                       <span>Pris en charge sponsor</span>
                     </div>
@@ -1805,7 +1828,7 @@ onMounted(async () => {
                   </td>
 
                   <td class="p-4 align-top">
-                    <div v-if="item.statut_sponsor === 'pris_en_charge'" class="text-purple-700 font-bold text-xs flex items-center gap-1.5">
+                    <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
                       <span>0 € à décaisser</span>
                     </div>
@@ -1828,23 +1851,35 @@ onMounted(async () => {
 
                   <td class="p-4 align-top">
                     <div v-if="item.demande_sponsor">
-                      <span v-if="item.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 inline-block">
-                        <i class="fa-solid fa-check mr-1"></i>Sponsor trouvé
+                      <span v-if="item.statut_sponsor === 'sponsor_trouve'" class="px-2.5 py-1 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                        <i class="fa-solid fa-circle-check text-emerald-600"></i>
+                        <span>Sponsor trouvé</span>
                       </span>
-                      <span v-else-if="item.statut_sponsor === 'non_finance'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200 inline-block">
-                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>Non sponsorisé
+
+                      <span v-else-if="item.statut_sponsor === 'en_recherche'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                        <i class="fa-solid fa-magnifying-glass text-amber-600 animate-pulse"></i>
+                        <span>Recherche en cours</span>
                       </span>
-                      <span v-else-if="item.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200 inline-block">
-                        <i class="fa-solid fa-xmark mr-1"></i>Refusé Sponsor
+
+                      <span v-else-if="item.statut_sponsor === 'non_finance'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                        <span>Non sponsorisé</span>
                       </span>
-                      <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 inline-block">
-                        <i class="fa-solid fa-clock mr-1"></i>En négociation
+
+                      <span v-else-if="item.statut_sponsor === 'refuse'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
+                        <i class="fa-solid fa-ban text-rose-500"></i>
+                        <span>Refusé Sponsor</span>
+                      </span>
+
+                      <span v-else class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
+                        <i class="fa-regular fa-clock text-blue-500"></i>
+                        <span>En attente</span>
                       </span>
                     </div>
                     <button 
                       v-else-if="canDelegateToSponsors"
                       @click="askSponsorsForMaterial(item)"
-                      class="px-2 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                      class="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                       title="Déléguer ce besoin aux sponsors"
                     >
                       <i class="fa-solid fa-handshake"></i>
@@ -1878,7 +1913,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE SPONSORS : 3 SOUS-ONGLETS ================= -->
+      <!-- ================= VUE SPONSORS (3 SOUS-ONGLETS) ================= -->
       <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-6">
         
         <!-- BANDEAU SOUS-ONGLETS -->
@@ -2060,7 +2095,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- 2. BESOINS À FAIRE SPONSORISER (AVEC GESTION D'ABANDON ET EXPORT) -->
+        <!-- 2. BESOINS À FAIRE SPONSORISER (DIFFÉRENCE EN COURS / TROUVÉ) -->
         <div v-if="currentSponsorSubTab === 'besoins'" class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-4">
             <div>
@@ -2069,7 +2104,7 @@ onMounted(async () => {
                 <span>Besoins matériels délégués au pôle sponsors</span>
               </h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                Les matériels acceptés n'ont pas besoin d'être validés financièrement. Si vous ne trouvez pas d'entreprise, cliquez sur « Abandonner ».
+                Acceptez la mission de prospection, puis confirmez dès qu'une entreprise finance le matériel.
               </p>
             </div>
 
@@ -2100,8 +2135,8 @@ onMounted(async () => {
                   <th class="p-3">Matériel</th>
                   <th class="p-3">Justification</th>
                   <th class="p-3">Coût estimé</th>
-                  <th class="p-3">Statut actuel</th>
-                  <th class="p-3 text-right">Arbitrage Sponsors</th>
+                  <th class="p-3">Étape Sponsoring</th>
+                  <th class="p-3 text-right">Actions Sponsors</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
@@ -2110,65 +2145,99 @@ onMounted(async () => {
                   <td class="p-3 font-extrabold text-slate-900">
                     {{ req.article }} <span class="text-slate-500 font-mono">(x{{ req.quantite }})</span>
                   </td>
-                  <td class="p-3 text-slate-600 max-w-xs">{{ req.details }}</td>
+                  <td class="p-3 text-slate-600 max-w-xs leading-relaxed">{{ req.details }}</td>
                   <td class="p-3 font-mono font-bold text-emerald-800">
                     {{ req.estimated_price ? `${(req.estimated_price * req.quantite).toFixed(2)} €` : '—' }}
                   </td>
+
+                  <!-- État d'avancement -->
                   <td class="p-3">
-                    <span v-if="req.statut_sponsor === 'pris_en_charge'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                      Pris en charge (Validé)
+                    <span v-if="req.statut_sponsor === 'sponsor_trouve'" class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1">
+                      <i class="fa-solid fa-circle-check text-emerald-600"></i>
+                      <span>Sponsor trouvé (Validé)</span>
                     </span>
-                    <span v-else-if="req.statut_sponsor === 'non_finance'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200" title="Non sponsorisé, renvoyé en trésorerie/logistique">
-                      Non sponsorisé
+
+                    <span v-else-if="req.statut_sponsor === 'en_recherche'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                      <i class="fa-solid fa-magnifying-glass text-amber-600"></i>
+                      <span>Recherche en cours</span>
                     </span>
-                    <span v-else-if="req.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200">
-                      Refusé
+
+                    <span v-else-if="req.statut_sponsor === 'non_finance'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1">
+                      <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                      <span>Non sponsorisé</span>
                     </span>
-                    <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                      En recherche active
+
+                    <span v-else-if="req.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
+                      <i class="fa-solid fa-ban text-rose-500"></i>
+                      <span>Refusé</span>
+                    </span>
+
+                    <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                      Nouveau besoin
                     </span>
                   </td>
+
+                  <!-- Actions du Pôle Sponsor -->
                   <td class="p-3 text-right whitespace-nowrap">
-                    <!-- Cas 1 : En attente de première décision -->
+                    <!-- Cas 1 : En attente -> accepter de chercher ou refuser -->
                     <div v-if="req.statut_sponsor === 'en_attente'" class="flex items-center justify-end gap-1.5">
                       <button 
-                        @click="handleSponsorResponse(req, 'valide')"
+                        @click="handleSponsorResponse(req, 'accepte_recherche')"
                         class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
-                        title="Accepter et créer automatiquement un Post-it dans 'À faire'"
+                        title="Accepter de prospecter pour ce matériel et créer le post-it"
                       >
                         <i class="fa-solid fa-check"></i>
-                        <span>Prendre en charge</span>
+                        <span>Chercher un sponsor</span>
                       </button>
                       <button 
                         @click="handleSponsorResponse(req, 'refuse')"
                         class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                        title="Refuser de prendre en charge ce besoin"
                       >
                         <i class="fa-solid fa-xmark"></i>
                         <span>Refuser</span>
                       </button>
                     </div>
 
-                    <!-- Cas 2 : Déjà pris en charge -> Possibilité de revenir sur la décision si échec -->
-                    <div v-else-if="req.statut_sponsor === 'pris_en_charge'" class="flex items-center justify-end gap-2">
-                      <span class="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Pris en charge</span>
+                    <!-- Cas 2 : En recherche -> Sponsor trouvé ! OU Abandonner -->
+                    <div v-else-if="req.statut_sponsor === 'en_recherche'" class="flex items-center justify-end gap-1.5">
+                      <button 
+                        @click="handleSponsorResponse(req, 'trouve')"
+                        class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title="Confirmer qu'un sponsor prend en charge ce matériel à 100%"
+                      >
+                        <i class="fa-solid fa-award"></i>
+                        <span>Sponsor trouvé !</span>
+                      </button>
                       <button 
                         @click="handleSponsorResponse(req, 'abandon')"
-                        class="px-2 py-1 text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition cursor-pointer"
-                        title="Déclarer que nous n'avons pas pu trouver de sponsor pour ce matériel"
+                        class="px-2 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                        title="Déclarer qu'aucun sponsor n'a été trouvé (renvoi à la logistique/trésorerie)"
                       >
-                        <i class="fa-solid fa-rotate-left mr-1"></i>Abandonner (Non sponsorisé)
+                        <span>Abandonner</span>
                       </button>
                     </div>
 
-                    <!-- Cas 3 : Non sponsorisé ou Refusé -> Possibilité de retenter -->
-                    <div v-else class="flex items-center justify-end gap-1.5">
-                      <span class="text-[11px] text-slate-400 italic mr-1">Classé</span>
+                    <!-- Cas 3 : Déjà trouvé -> Désistement éventuel -->
+                    <div v-else-if="req.statut_sponsor === 'sponsor_trouve'" class="flex items-center justify-end gap-2">
+                      <span class="text-[11px] font-black text-emerald-700">Validé</span>
                       <button 
-                        @click="handleSponsorResponse(req, 'valide')"
-                        class="px-2 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition cursor-pointer"
-                        title="Reprendre en charge ce besoin"
+                        @click="handleSponsorResponse(req, 'abandon')"
+                        class="text-[10px] text-slate-400 hover:text-rose-600 hover:underline cursor-pointer"
+                        title="Annuler si le sponsor s'est désisté"
                       >
-                        Retenter
+                        Désistement ?
+                      </button>
+                    </div>
+
+                    <!-- Cas 4 : Classé / Refusé / Abandonné -> Option de retenter -->
+                    <div v-else class="flex items-center justify-end gap-1.5">
+                      <button 
+                        @click="handleSponsorResponse(req, 'accepte_recherche')"
+                        class="px-2 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition cursor-pointer"
+                        title="Rouvrir la recherche"
+                      >
+                        Retenter la recherche
                       </button>
                     </div>
                   </td>
@@ -2303,7 +2372,7 @@ onMounted(async () => {
             <div class="mt-6 pt-4 border-t border-slate-100 flex justify-end">
               <a 
                 :href="`mailto:${selectedMessage.email}?subject=Re: Course Pas d'oubli`"
-                class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-2"
+                class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center gap-2"
               >
                 <i class="fa-solid fa-reply"></i>
                 <span>Répondre par e-mail</span>
