@@ -25,7 +25,7 @@ const currentYear = new Date().getFullYear();
           <h4 class="text-white font-bold uppercase tracking-wider mb-3">Navigation </h4>
           <ul class="space-y-2 text-slate-400">
             <li><a href="#cause" class="hover:text-emerald-400 transition">France Alzheimer 37 </a></li>
-            <li><a href="#epreuves" class="hover:text-emerald-400 transition">Épreuves (10k, 6k, 3k, 1.5k) </a></li>
+            <li><a href="#epreuves" class="hover:text-emerald-400 transition">Épreuves (10k, 6k, 3k, 1.2k) </a></li>
             <li><a href="#programme" class="hover:text-emerald-400 transition">Programme du 23 mai 2027 </a></li>
             <li><a href="#infos" class="hover:text-emerald-400 transition">Accès & Dossards </a></li>
           </ul>

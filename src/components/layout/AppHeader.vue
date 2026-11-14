@@ -62,10 +62,10 @@ const closeMenu = () => (isMobileMenuOpen.value = false);
           >Infos Pratiques</a
         >
         <a href="#partenaires" class="hover:text-emerald-700 transition"
-          >Devenir bénévole</a
+          >Partenaires</a
         >
         <a href="#partenaires" class="hover:text-emerald-700 transition"
-          >Partenaires</a
+          >Devenir bénévole</a
         >
         <a href="#contact" class="hover:text-emerald-700 transition">Contact</a>
 

@@ -1,57 +1,48 @@
 <script setup>
 import { ref } from 'vue';
-import { useModal } from '../../composables/useModal';
 
 const activeTab = ref('matin');
-const { openModal } = useModal();
 
 const morningSchedule = [
   {
     time: '08h00',
     title: 'Ouverture du site aux bénévoles',
-    desc: 'Briefing des signaleurs, poste de la Protection Civile et balisages finaux.',
-    details: 'Accueil des bénévoles avec collation, répartition des postes stratégiques sur les parcours et vérification des dispositifs de sécurité.'
+    desc: 'Briefing des signaleurs, poste de la Protection Civile et balisages finaux.'
   },
   {
     time: '08h30',
     title: 'Accueil des participants & Retrait des dossards',
-    desc: "Café d'accueil et inauguration de l'espace France Alzheimer 37.",
-    details: "Retrait des dossards sur présentation d'une pièce d'identité et de l'attestation PPS. Café et viennoiseries disponibles."
+    desc: "Café d'accueil et inauguration de l'espace France Alzheimer 37."
   },
   {
     time: 'à définir',
     tag: 'Départ',
     title: 'Marche 6 km',
-    desc: 'Départ groupé pour les marcheurs, familles et poussettes.',
-    details: 'Circuit nature accessible à tous les rythmes sans certificat médical.'
+    desc: 'Départ groupé pour les marcheurs, familles et poussettes.'
   },
   {
     time: 'à définir',
     tag: 'Départ',
     title: 'Course 10 km',
-    desc: 'Épreuve chronométrée',
-    details: 'Tracé vallonné sur les routes communales dont un chemin de terre.'
+    desc: 'Épreuve chronométrée'
   },
   {
     time: 'à définir',
     tag: 'Départ',
     title: 'Course 6 km',
-    desc: "Épreuve chronométrée",
-    details: 'Tracé vallonné sur les routes communales.'
+    desc: "Épreuve chronométrée"
   },
   {
     time: 'à définir',
     tag: 'Départs',
     title: 'Courses 3 km ',
-    desc: 'Parcours ado dans la ville.',
-    details: 'Épreuves entièrement sécurisées dans le centre-bourg.'
+    desc: 'Parcours ado dans la ville.'
   },
   {
     time: 'à définir',
     tag: 'Départs',
     title: 'Courses 1,5 km Enfants',
-    desc: 'Parcours découvertes dans la ville.',
-    details: 'Épreuves entièrement sécurisées dans le centre-bourg.'
+    desc: 'Parcours découvertes dans la ville.'
   }
 ];
 
@@ -60,36 +51,25 @@ const afternoonSchedule = [
     time: '12h15',
     tag: 'Convivialité',
     title: 'Déjeuner Partagé, Buvette & Crêpes',
-    desc: 'Restauration sur place et stands.',
-    details: 'Restauration locale, tables et vente de gateaux et produits locaux.'
+    desc: 'Restauration sur place et stands.'
   },
   {
     time: '13h45',
     tag: 'Conférence',
     title: '« Sport, Mémoire & Bien Vieillir »',
-    desc: 'Animée par France Alzheimer 37 avec échanges et questions/réponses.',
-    details: 'Intervention d’experts et de bénévoles sur l’impact de l’activité physique pour préserver ses fonctions cognitives.'
+    desc: 'Animée par France Alzheimer 37 avec échanges et questions/réponses.'
   },
   {
     time: '14h30',
     title: 'Ateliers Mémoire ',
-    desc: 'Activités intergénérationnelles sur l\'esplanade du village.',
-    details: 'Jeux d’adresse et de logique en accès libre pour les enfants, les aînés et leurs accompagnants.'
+    desc: 'Activités intergénérationnelles sur l\'esplanade du village.'
   },
   {
     time: '16h15',
     title: 'Remise du Chèque Symbolique & Clôture',
-    desc: 'Annonce officielle des fonds récoltés pour France Alzheimer 37.',
-    details: 'Discours des organisateurs, annonce du montant total reversé à l’association et verre de l’amitié.'
+    desc: 'Annonce officielle des fonds récoltés pour France Alzheimer 37.'
   }
 ];
-
-const handleItemClick = (item) => {
-  openModal('details', {
-    name: `${item.time} — ${item.title}`,
-    detailsText: item.details
-  });
-};
 </script>
 
 <template>
@@ -98,7 +78,6 @@ const handleItemClick = (item) => {
       <!-- En-tête -->
       <div class="text-center mb-10">
         <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-3">Le Programme de la Journée</h2>
-        <p class="text-slate-600 mt-2 text-sm">Cliquez sur un horaire pour afficher tous les détails.</p>
 
         <!-- Sélecteur d'onglets -->
         <div class="inline-flex p-1 bg-slate-100 rounded-2xl border border-slate-200 mt-6">
@@ -124,29 +103,27 @@ const handleItemClick = (item) => {
         <div 
           v-for="(item, idx) in morningSchedule" 
           :key="idx"
-          @click="handleItemClick(item)"
-          class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-300 hover:bg-emerald-50 hover:border-emerald-700 flex items-start justify-between gap-4 cursor-pointer transition-all duration-200 group shadow-xs hover:shadow-md"
+          class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-300 flex items-start justify-between gap-4 shadow-xs"
         >
           <div class="flex gap-4 items-start">
-            <span class="font-mono font-extrabold text-slate-600 group-hover:text-emerald-800 w-16 pt-0.5 transition-colors">
+            <span class="font-mono font-extrabold text-slate-600 w-16 pt-0.5">
               {{ item.time }}
             </span>
             <div>
               <span 
                 v-if="item.tag" 
-                class="text-[10px] uppercase font-bold bg-slate-600 text-white group-hover:bg-emerald-700 px-2 py-0.5 rounded transition-colors"
+                class="text-[10px] uppercase font-bold bg-slate-600 text-white px-2 py-0.5 rounded"
               >
                 {{ item.tag }}
               </span>
-              <h4 class="font-bold text-slate-600 group-hover:text-emerald-950 mt-1 transition-colors">
+              <h4 class="font-bold text-slate-600 mt-1">
                 {{ item.title }}
               </h4>
-              <p class="text-xs text-slate-500 group-hover:text-slate-700 mt-0.5 transition-colors">
+              <p class="text-xs text-slate-500 mt-0.5">
                 {{ item.desc }}
               </p>
             </div>
           </div>
-          <i class="fa-solid fa-chevron-right text-slate-400 group-hover:text-emerald-700 group-hover:translate-x-1 transition-all text-sm mt-1"></i>
         </div>
       </div>
 
@@ -155,29 +132,27 @@ const handleItemClick = (item) => {
         <div 
           v-for="(item, idx) in afternoonSchedule" 
           :key="idx"
-          @click="handleItemClick(item)"
-          class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-300 hover:bg-emerald-50 hover:border-emerald-700 flex items-start justify-between gap-4 cursor-pointer transition-all duration-200 group shadow-xs hover:shadow-md"
+          class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-300 flex items-start justify-between gap-4 shadow-xs"
         >
           <div class="flex gap-4 items-start">
-            <span class="font-mono font-extrabold text-slate-600 group-hover:text-emerald-800 w-16 pt-0.5 transition-colors">
+            <span class="font-mono font-extrabold text-slate-600 w-16 pt-0.5">
               {{ item.time }}
             </span>
             <div>
               <span 
                 v-if="item.tag" 
-                class="text-[10px] uppercase font-bold bg-slate-600 text-white group-hover:bg-emerald-700 px-2 py-0.5 rounded transition-colors"
+                class="text-[10px] uppercase font-bold bg-slate-600 text-white px-2 py-0.5 rounded"
               >
                 {{ item.tag }}
               </span>
-              <h4 class="font-bold text-slate-600 group-hover:text-emerald-950 mt-1 transition-colors">
+              <h4 class="font-bold text-slate-600 mt-1">
                 {{ item.title }}
               </h4>
-              <p class="text-xs text-slate-500 group-hover:text-slate-700 mt-0.5 transition-colors">
+              <p class="text-xs text-slate-500 mt-0.5">
                 {{ item.desc }}
               </p>
             </div>
           </div>
-          <i class="fa-solid fa-chevron-right text-slate-400 group-hover:text-emerald-700 group-hover:translate-x-1 transition-all text-sm mt-1"></i>
         </div>
       </div>
     </div>

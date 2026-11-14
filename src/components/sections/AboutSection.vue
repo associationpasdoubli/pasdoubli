@@ -19,13 +19,13 @@ import logoUrl from '../../assets/logo.png';
         <div
           class="lg:col-span-7 space-y-4 text-slate-700 leading-relaxed text-sm sm:text-base"
         >
-          <p>
+          <p class="text-justify";>
             Née de la volonté de se mobiliser face à la maladie d’Alzheimer,
             notre association a pour objectif de sensibiliser le public, de
             soutenir la recherche et de contribuer à la lutte contre cette
             maladie qui touche tant de personnes et de familles. 
           </p>
-          <p>
+          <p class="text-justify">
             Notre nom porte un double sens.  Pas d’Oubli, c’est ne pas
             oublier les personnes atteintes de la maladie d’Alzheimer, leurs
             histoires, leurs souvenirs et tout ce qui fait leur identité. Mais c’est aussi le « pas » que chacun peut faire pour agir,
@@ -34,7 +34,7 @@ import logoUrl from '../../assets/logo.png';
             nous rapproche d’un avenir où la maladie sera mieux comprise et
             mieux combattue. 
           </p>
-          <p>
+          <p class="text-justify">
             C’est dans cet esprit que nous organiserons des actions et des
             événements solidaires, notamment une course ouverte à
             <strong>tous</strong>, mêlant sport, partage et engagement. 
@@ -42,7 +42,7 @@ import logoUrl from '../../assets/logo.png';
             générations, sensibiliser le plus grand nombre et transformer notre
             mobilisation en un soutien concret. 
           </p>
-          <p>
+          <p class="text-justify">
             Derrière chaque personne touchée par Alzheimer, il y a une vie, des
             souvenirs, des proches et souvent un aidant qui avance dans
             l’ombre.  Il y a des familles qui cherchent des réponses,

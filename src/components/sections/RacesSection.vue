@@ -1,344 +1,326 @@
 <script setup>
 import { ref } from 'vue';
+import runnerImg from '../../assets/affiche.png';
 
-// Ligne 1 : Les 3 courses
-const coursesRow = [
+// 1. LES COURSES (4 formats chronométrés / enfants)
+const courses = [
   {
     id: 'course-10km',
-    title: 'COURSE 10KM',
-    category: 'Course chronométrée',
-    strokeColor: '#006d32', // Vert forêt
-    dividerColor: 'rgba(0, 109, 50, 0.35)',
-    badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-200',
-    startTime: '09h45',
+    distance: '10 KM',
+    title: 'COURSE + DE 16 ANS',
+    subtitle: 'Course chronométrée officielle',
+    priceLabel: '10 €',
+    isFreeDonation: false,
+    ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
+    priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
+    startTime: '',
     terrain: 'Chemin et route',
-    condition: '+16 ans | PPS / FFA requis',
-    price: '10 €',
-    minAge: 'À partir de 16 ans',
-    elevation: '+85 m D+',
-    description: 'Le parcours phare de "Pas d\'oubli". Un tracé roulant mêlant chemins naturels et passages urbains avec ravitaillement à mi-parcours et à l\'arrivée.'
+    condition: 'PPS ou licence FFA (+16 ans)',
+    description: 'Le parcours phare de 10 km au départ du Square des Anciens Combattants d\'Athée-sur-Cher. Chronométrage officiel, médaille finisher et t-shirt offert.'
   },
   {
     id: 'course-6km',
-    title: 'COURSE 6KM',
-    category: 'Course populaire',
-    strokeColor: '#006d32',
-    dividerColor: 'rgba(0, 109, 50, 0.35)',
-    badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-200',
-    startTime: '10h15',
-    terrain: 'Route',
-    condition: '+16 ans | PPS / FFA requis',
-    price: '6 €',
-    minAge: 'À partir de 16 ans',
-    elevation: '+45 m D+',
-    description: 'Accessible à tous, idéal pour se challenger sur une distance dynamique ou partager un moment sportif entre collègues et amis.'
+    distance: '6 KM',
+    title: 'COURSE + DE 16 ANS',
+    subtitle: 'Course populaire',
+    priceLabel: '6 €',
+    isFreeDonation: false,
+    ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
+    priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
+    startTime: '',
+    terrain: 'Chemin et route',
+    condition: 'PPS ou licence FFA (+16 ans)',
+    description: 'Une distance dynamique accessible à tous les coureurs dès 16 ans pour se dépasser dans une ambiance conviviale.'
   },
   {
     id: 'course-3km',
-    title: 'COURSE 3KM',
-    category: 'Course découverte',
-    strokeColor: '#006d32',
-    dividerColor: 'rgba(0, 109, 50, 0.35)',
-    badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-200',
-    startTime: '11h15',
-    terrain: 'Route',
-    condition: '10 - 16 ans | PPS / FFA requis',
-    price: '3 €',
-    minAge: 'Entre 10 et 16 ans',
-    elevation: '+20 m D+',
-    description: 'Un format court et rapide, parfait pour une première expérience en compétition ou pour courir en duo parent-ado.'
-  }
-];
-
-// Ligne 2 : Les 2 marches + la course enfant
-const walksAndKidsRow = [
-  {
-    id: 'marche-6km',
-    title: 'MARCHE 6KM',
-    category: 'Marche solidaire',
-    strokeColor: '#14b8a6', // Turquoise
-    dividerColor: 'rgba(20, 184, 166, 0.35)',
-    badgeClass: 'bg-teal-100 text-teal-900 border-teal-200',
-    startTime: '10h20',
+    distance: '3 KM',
+    title: 'COURSE 10 / 16 ANS',
+    subtitle: 'Course jeunes & découverte',
+    priceLabel: '3 €',
+    isFreeDonation: false,
+    ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
+    priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
+    startTime: '',
     terrain: 'Chemin et route',
-    condition: 'Sans certificat',
-    price: '6 €',
-    minAge: 'Ouvert à tous',
-    elevation: '+40 m D+',
-    description: 'Une boucle conviviale sans chronomètre pour soutenir France Alzheimer 37 à votre rythme, en famille ou entre amis.'
-  },
-  {
-    id: 'marche-3km',
-    title: 'MARCHE 3KM',
-    category: 'Marche accessible & familles',
-    strokeColor: '#14b8a6',
-    dividerColor: 'rgba(20, 184, 166, 0.35)',
-    badgeClass: 'bg-teal-100 text-teal-900 border-teal-200',
-    startTime: '11h20',
-    terrain: 'Plat & accessible',
-    condition: 'Sans certificat',
-    price: '3 €',
-    minAge: 'Ouvert à tous (familles & seniors)',
-    elevation: '+15 m D+',
-    description: 'Parcours plat et sécurisé permettant aux familles, enfants et personnes âgées de participer ensemble à la mobilisation.'
+    condition: 'Jeunes de 10 à 16 ans (accord parental)',
+    description: 'Un tracé court et rapide spécialement calibré pour les jeunes coureurs de 10 à 16 ans.'
   },
   {
     id: 'course-1-2km',
-    title: 'COURSE 1,2KM',
-    category: 'Course Enfants',
-    strokeColor: '#f59e0b', // Orange / Ambre
-    dividerColor: 'rgba(245, 158, 11, 0.4)',
-    badgeClass: 'bg-amber-100 text-amber-900 border-amber-200',
-    startTime: '11h45',
-    terrain: 'Parc & ligne droite',
-    condition: 'Accord parental',
-    price: 'Don libre',
-    minAge: 'De 7 à 11 ans (Éveil & Poussins)',
-    elevation: 'Plat',
-    description: 'La course des jeunes champions ! Un tour encadré sous les applaudissements du public avec médaille et goûter offerts à chaque arrivant.'
+    distance: '1,2 KM',
+    title: 'COURSE - DE 10 ANS',
+    subtitle: 'Course enfants',
+    priceLabel: 'DON LIBRE',
+    isFreeDonation: true,
+    ribbonBg: 'bg-[#0284c7] group-hover:bg-[#0369a1]',
+    priceBorder: 'border-[#1e6091] text-[#1e6091] bg-sky-50 group-hover:bg-sky-100',
+    startTime: '',
+    terrain: 'Boucle sécurisée au village',
+    condition: 'Enfants de moins de 10 ans',
+    description: 'La course dédiée aux enfants de moins de 10 ans ! Participation sur don libre au profit de France Alzheimer 37, médaille finisher pour chaque enfant.'
+  }
+];
+
+// 2. LES MARCHES (2 formats solidaires ouverts à tous sans certificat)
+const marches = [
+  {
+    id: 'marche-6km',
+    distance: '6 KM',
+    title: 'MARCHE TOUT PUBLIC',
+    subtitle: 'Grande boucle solidaire',
+    priceLabel: '6 €',
+    isFreeDonation: false,
+    ribbonBg: 'bg-[#0d9488] group-hover:bg-[#0f766e]',
+    priceBorder: 'border-[#0d9488] text-[#0d9488] group-hover:bg-teal-50',
+    startTime: '',
+    terrain: 'Chemin et route',
+    condition: 'Ouvert à tous • Sans certificat médical',
+    description: 'Une randonnée solidaire de 6 km sans chronomètre pour soutenir France Alzheimer 37 à votre rythme, en famille ou entre amis.'
+  },
+  {
+    id: 'marche-3km',
+    distance: '3 KM',
+    title: 'MARCHE TOUT PUBLIC',
+    subtitle: 'Boucle découverte & familles',
+    priceLabel: '3 €',
+    isFreeDonation: false,
+    ribbonBg: 'bg-[#0d9488] group-hover:bg-[#0f766e]',
+    priceBorder: 'border-[#0d9488] text-[#0d9488] group-hover:bg-teal-50',
+    startTime: '',
+    terrain: 'Plat & accessible',
+    condition: 'Ouvert à tous • Sans certificat médical',
+    description: 'Un parcours plat et sécurisé permettant aux familles, enfants et seniors de participer ensemble à la mobilisation.'
   }
 ];
 
 const selectedRace = ref(null);
-
-const openRaceModal = (race) => {
-  selectedRace.value = race;
-};
 </script>
 
 <template>
-  <section id="epreuves" class="py-16 sm:py-24 bg-white">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-      
-      <!-- En-tête de section -->
-      <div class="text-center max-w-2xl mx-auto mb-14">
+  <section id="epreuves" class="relative py-16 sm:py-24 bg-white overflow-hidden">
     
-        <h2 class="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
-          Les Épreuves & Parcours
-        </h2>
-        <p class="text-slate-600 text-sm sm:text-base mt-2">
-          Cliquez sur une épreuve pour afficher le règlement détaillé et le tracé.
-        </p>
-
-        <!-- Légende rapide des couleurs -->
-        <div class="flex items-center justify-center gap-6 flex-wrap mt-5 text-xs font-bold text-slate-600">
-          <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full bg-[#006d32]"></span> Courses
-          </span>
-          <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full bg-[#14b8a6]"></span> Marches
-          </span>
-          <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full bg-[#f59e0b]"></span> Enfants
-          </span>
-        </div>
-      </div>
-
-      <!-- ================= GRILLE DES 6 ÉPREUVES ================= -->
-      <div class="space-y-6 select-none">
-        
-        <!-- LIGNE 1 : LES 3 COURSES -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div
-            v-for="race in coursesRow"
-            :key="race.id"
-            @click="openRaceModal(race)"
-            class="group bg-white rounded-2xl p-6 border-[3px] shadow-xs hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
-            :style="{ borderColor: race.strokeColor }"
-          >
-            <!-- Titre condensé gras + filet fin horizontal -->
-            <div>
-              <h3
-                class="text-center font-black uppercase text-[28px] leading-none tracking-tighter scale-y-110"
-                :style="{ color: race.strokeColor }"
-              >
-                {{ race.title }}
-              </h3>
-              <div
-                class="w-full h-[1px] mt-4"
-                :style="{ backgroundColor: race.dividerColor }"
-              ></div>
-            </div>
-
-            <!-- Liste des caractéristiques -->
-            <div class="divide-y divide-slate-100 text-[13px] my-4">
-              <div class="py-3 flex items-center justify-between">
-                <span class="text-slate-500 font-medium">Départ</span>
-                <span class="font-extrabold text-slate-900 font-mono">{{ race.startTime }}</span>
-              </div>
-
-              <div class="py-3 flex items-center justify-between">
-                <span class="text-slate-500 font-medium">Parcours</span>
-                <span class="font-extrabold text-slate-900">{{ race.terrain }}</span>
-              </div>
-
-              <div class="py-3 flex items-center justify-between gap-2">
-                <span class="text-slate-500 font-medium">Condition</span>
-                <span class="px-2.5 py-0.5 rounded-md bg-amber-100/90 text-amber-900 font-bold text-[11px] whitespace-nowrap">
-                  {{ race.condition }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Bas de carte : Prix à gauche, DÉTAILS à droite -->
-            <div class="flex items-center justify-between pt-3 border-t border-slate-100">
-              <span class="font-mono font-black text-base text-slate-900">
-                {{ race.price }}
-              </span>
-
-              <span class="relative font-extrabold text-[11px] tracking-wider uppercase text-slate-900 pb-1">
-                DÉTAILS
-                <span class="absolute left-0 bottom-0 w-3/5 h-[2.5px] bg-slate-900 group-hover:w-full transition-all duration-300"></span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- LIGNE 2 : LES 2 MARCHES + LA COURSE ENFANT -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div
-            v-for="race in walksAndKidsRow"
-            :key="race.id"
-            @click="openRaceModal(race)"
-            class="group bg-white rounded-2xl p-6 border-[3px] shadow-xs hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
-            :style="{ borderColor: race.strokeColor }"
-          >
-            <!-- Titre condensé gras + filet fin horizontal -->
-            <div>
-              <h3
-                class="text-center font-black uppercase text-[28px] leading-none tracking-tighter scale-y-110"
-                :style="{ color: race.strokeColor }"
-              >
-                {{ race.title }}
-              </h3>
-              <div
-                class="w-full h-[1px] mt-4"
-                :style="{ backgroundColor: race.dividerColor }"
-              ></div>
-            </div>
-
-            <!-- Liste des caractéristiques -->
-            <div class="divide-y divide-slate-100 text-[13px] my-4">
-              <div class="py-3 flex items-center justify-between">
-                <span class="text-slate-500 font-medium">Départ</span>
-                <span class="font-extrabold text-slate-900 font-mono">{{ race.startTime }}</span>
-              </div>
-
-              <div class="py-3 flex items-center justify-between">
-                <span class="text-slate-500 font-medium">Parcours</span>
-                <span class="font-extrabold text-slate-900">{{ race.terrain }}</span>
-              </div>
-
-              <div class="py-3 flex items-center justify-between gap-2">
-                <span class="text-slate-500 font-medium">Condition</span>
-                <span class="px-2.5 py-0.5 rounded-md bg-amber-100/90 text-amber-900 font-bold text-[11px] whitespace-nowrap">
-                  {{ race.condition }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Bas de carte : Prix à gauche, DÉTAILS à droite -->
-            <div class="flex items-center justify-between pt-3 border-t border-slate-100">
-              <span class="font-mono font-black text-base text-slate-900">
-                {{ race.price }}
-              </span>
-
-              <span class="relative font-extrabold text-[11px] tracking-wider uppercase text-slate-900 pb-1">
-                DÉTAILS
-                <span class="absolute left-0 bottom-0 w-3/5 h-[2.5px] bg-slate-900 group-hover:w-full transition-all duration-300"></span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- ================= BOUTON D'INSCRIPTION GLOBAL ================= -->
-      <div class="mt-12 text-center">
-        <a
-          href="#inscription"
-          class="inline-flex items-center justify-center gap-3 px-8 py-4 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-emerald-700/25 transition-all duration-200 hover:-translate-y-0.5"
-        >
-          <i class="fa-solid fa-ticket text-base"></i>
-          <span>S'inscrire à une épreuve</span>
-        </a>
-        <p class="text-xs text-slate-500 font-medium mt-2.5">
-          Ouverture officielle de la billetterie le <strong class="text-slate-800">14 décembre</strong>.
-        </p>
-      </div>
-
+    <!-- ILLUSTRATION COUREUSE COLLÉE AU BORD DROIT DE L'ÉCRAN -->
+    <div class="hidden xl:block pointer-events-none select-none absolute right-0 top-1/2 -translate-y-1/2 z-0">
+      <img
+        :src="runnerImg"
+        alt="Coureuse Pas d'oubli"
+        class="h-[620px] 2xl:h-[700px] w-auto object-contain object-right mix-blend-multiply"
+      />
     </div>
 
-    <!-- ================= MODALE DE DÉTAIL DE L'ÉPREUVE ================= -->
+    <div class="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="xl:pr-56">
+        
+        <!-- En-tête de section -->
+        <div class="text-center lg:text-left max-w-2xl mx-auto lg:mx-0 mb-12">
+          <h2 class="text-3xl sm:text-5xl font-black uppercase text-[#1f7a4c] tracking-tight">
+            Les Épreuves & Tarifs
+          </h2>
+          <p class="text-slate-600 text-sm sm:text-base mt-2">
+            Chacun peut agir à petite échelle. Chaque participation, chaque échange et chaque geste compte
+          </p>
+        </div>
+
+        <div class="space-y-12 select-none">
+          
+          <!-- ================= BLOC 1 : LES COURSES ================= -->
+          <div>
+            <div class="flex items-center gap-3 mb-5">
+              <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
+                Les Courses
+              </h3>
+              <div class="flex-1 h-[2px] bg-[#1f7a4c]/20 rounded-full"></div>
+            </div>
+
+            <div class="space-y-4">
+              <div
+                v-for="race in courses"
+                :key="race.id"
+                @click="selectedRace = race"
+                class="group flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-5 cursor-pointer transition-transform duration-200 hover:translate-x-1"
+              >
+                <!-- Ruban incliné -->
+                <div :class="[race.ribbonBg, 'flex-1 text-white px-5 sm:px-7 py-4 ribbon-slant shadow-md flex items-center justify-between gap-4 transition-colors']">
+                  <div class="flex items-center gap-4 sm:gap-6">
+                    <span class="text-3xl sm:text-5xl font-black tracking-tighter leading-none whitespace-nowrap">
+                      {{ race.distance }}
+                    </span>
+
+                    <div class="flex flex-col justify-center border-l-2 border-white/30 pl-4">
+                      <span class="text-sm sm:text-lg font-black uppercase tracking-tight leading-tight">
+                        {{ race.title }}
+                      </span>
+                      <span class="text-[11px] sm:text-xs font-semibold text-white/85">
+                        {{ race.subtitle }} • Départ {{ race.startTime }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span class="hidden md:inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider bg-white/15 px-3 py-1.5 rounded-lg">
+                    <span>Détails</span>
+                    <i class="fa-solid fa-chevron-right text-[9px]"></i>
+                  </span>
+                </div>
+
+                <!-- Tarif encadré net -->
+                <div class="sm:w-44 flex items-center justify-between sm:justify-center flex-shrink-0">
+                  <span class="text-xs font-bold uppercase text-slate-500 sm:hidden">Tarif :</span>
+                  <span
+                    :class="[
+                      race.priceBorder,
+                      race.isFreeDonation ? 'text-base sm:text-lg font-sans' : 'text-2xl sm:text-3xl font-mono',
+                      'w-full text-center px-4 py-2 bg-white border-[3px] font-black tracking-tight rounded-xl shadow-xs transition-colors'
+                    ]"
+                  >
+                    {{ race.priceLabel }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ================= BLOC 2 : LES MARCHES ================= -->
+          <div>
+            <div class="flex items-center gap-3 mb-5">
+              <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
+                Les Marches Solidaires
+              </h3>
+              <span class="px-2.5 py-0.5 bg-teal-50 text-[#0d9488] border border-teal-200 rounded-md text-[10px] font-extrabold uppercase">
+                Sans certificat
+              </span>
+              <div class="flex-1 h-[2px] bg-[#0d9488]/20 rounded-full"></div>
+            </div>
+
+            <div class="space-y-4">
+              <div
+                v-for="marche in marches"
+                :key="marche.id"
+                @click="selectedRace = marche"
+                class="group flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-5 cursor-pointer transition-transform duration-200 hover:translate-x-1"
+              >
+                <!-- Ruban incliné turquoise -->
+                <div :class="[marche.ribbonBg, 'flex-1 text-white px-5 sm:px-7 py-4 ribbon-slant shadow-md flex items-center justify-between gap-4 transition-colors']">
+                  <div class="flex items-center gap-4 sm:gap-6">
+                    <span class="text-3xl sm:text-5xl font-black tracking-tighter leading-none whitespace-nowrap">
+                      {{ marche.distance }}
+                    </span>
+
+                    <div class="flex flex-col justify-center border-l-2 border-white/30 pl-4">
+                      <span class="text-sm sm:text-lg font-black uppercase tracking-tight leading-tight">
+                        {{ marche.title }}
+                      </span>
+                      <span class="text-[11px] sm:text-xs font-semibold text-white/85">
+                        {{ marche.subtitle }} • Départ {{ marche.startTime }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span class="hidden md:inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider bg-white/15 px-3 py-1.5 rounded-lg">
+                    <span>Détails</span>
+                    <i class="fa-solid fa-chevron-right text-[9px]"></i>
+                  </span>
+                </div>
+
+                <!-- Tarif encadré turquoise -->
+                <div class="sm:w-44 flex items-center justify-between sm:justify-center flex-shrink-0">
+                  <span class="text-xs font-bold uppercase text-slate-500 sm:hidden">Tarif :</span>
+                  <span
+                    :class="[
+                      marche.priceBorder,
+                      'w-full text-center px-4 py-2 bg-white border-[3px] font-mono font-black text-2xl sm:text-3xl tracking-tight rounded-xl shadow-xs transition-colors'
+                    ]"
+                  >
+                    {{ marche.priceLabel }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Encart d'inscription global -->
+        <div class="mt-12 bg-sky-50/90 border-[3px] border-[#1f7a4c] rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-5 shadow-xs">
+          <div class="text-center sm:text-left">
+            <p class="text-xs sm:text-sm text-slate-800 font-bold">
+              Ouverture officielle des inscriptions en ligne le <span class="text-[#1f7a4c] font-black underline">14 décembre</span>.
+            </p>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Médaille finisher & t-shirt offerts • 100% des bénéfices reversés à France Alzheimer 37.
+            </p>
+          </div>
+
+          <a
+            href="#inscription"
+            class="w-full sm:w-auto px-7 py-3.5 bg-[#1f7a4c] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider ribbon-slant-both shadow-md transition hover:-translate-y-0.5 text-center whitespace-nowrap"
+          >
+            S'inscrire en ligne
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MODALE DÉTAIL ÉPREUVE -->
     <div
       v-if="selectedRace"
       @click.self="selectedRace = null"
       class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
     >
-      <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative border-t-8" :style="{ borderColor: selectedRace.strokeColor }">
+      <div class="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative border-[3px] border-[#1f7a4c]">
         <button
           @click="selectedRace = null"
-          class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 cursor-pointer text-lg"
+          class="absolute top-5 right-5 text-slate-400 hover:text-slate-700 cursor-pointer text-lg"
         >
           <i class="fa-solid fa-xmark"></i>
         </button>
 
-        <span :class="[selectedRace.badgeClass, 'text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-1 rounded-full border inline-block']">
-          {{ selectedRace.category }}
-        </span>
+        <div class="bg-[#1f7a4c] text-white font-black text-2xl uppercase px-4 py-1.5 ribbon-slant inline-block">
+          {{ selectedRace.distance }}
+        </div>
 
-        <h3 class="text-3xl font-black mt-3 uppercase" :style="{ color: selectedRace.strokeColor }">
+        <h4 class="text-lg font-black uppercase text-slate-900 mt-3">
           {{ selectedRace.title }}
-        </h3>
+        </h4>
 
         <p class="text-sm text-slate-600 leading-relaxed mt-3">
           {{ selectedRace.description }}
         </p>
 
         <div class="grid grid-cols-2 gap-3 my-6">
-          <div class="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-            <div class="text-[10px] font-bold uppercase text-slate-400">Heure de départ</div>
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Départ</div>
             <div class="text-sm font-black text-slate-900 font-mono mt-0.5">{{ selectedRace.startTime }}</div>
           </div>
 
-          <div class="p-3 rounded-2xl bg-slate-50 border border-slate-100">
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
             <div class="text-[10px] font-bold uppercase text-slate-400">Tarif</div>
-            <div class="text-sm font-black font-mono mt-0.5" :style="{ color: selectedRace.strokeColor }">
-              {{ selectedRace.price }}
-            </div>
+            <div class="text-sm font-black text-[#1f7a4c] mt-0.5">{{ selectedRace.priceLabel }}</div>
           </div>
 
-          <div class="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-            <div class="text-[10px] font-bold uppercase text-slate-400">Dénivelé & Terrain</div>
-            <div class="text-xs font-bold text-slate-900 mt-0.5">{{ selectedRace.terrain }} ({{ selectedRace.elevation }})</div>
-          </div>
-
-          <div class="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-            <div class="text-[10px] font-bold uppercase text-slate-400">Condition / Âge</div>
-            <div class="text-xs font-bold text-slate-800 mt-0.5">{{ selectedRace.condition }} — {{ selectedRace.minAge }}</div>
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 col-span-2">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Conditions d'accès</div>
+            <div class="text-xs font-bold text-slate-800 mt-0.5">{{ selectedRace.condition }}</div>
           </div>
         </div>
 
-        <div class="flex items-center justify-between gap-3 pt-2">
+        <div class="flex items-center justify-end gap-3">
           <button
             @click="selectedRace = null"
-            class="px-4 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs cursor-pointer transition"
+            class="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
           >
             Fermer
           </button>
-
           <a
             href="#inscription"
             @click="selectedRace = null"
-            class="flex-1 py-3 text-white font-bold text-xs uppercase tracking-wider rounded-xl text-center shadow-md transition hover:opacity-90 flex items-center justify-center gap-2"
-            :style="{ backgroundColor: selectedRace.strokeColor }"
+            class="px-6 py-2.5 bg-[#1f7a4c] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-sm"
           >
-            <i class="fa-solid fa-ticket"></i>
-            <span>S'inscrire (Ouverture le 14 déc.)</span>
+            Inscription (14 déc.)
           </a>
         </div>
       </div>
     </div>
-
   </section>
 </template>

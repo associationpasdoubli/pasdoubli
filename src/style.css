@@ -23,6 +23,7 @@ body,
   flex-direction: column;
   min-height: 100vh;
   width: 100%;
+  text-justify: auto;
 }
 
 .section-container {
@@ -982,4 +983,44 @@ body,
   font-size: 0.875rem;
   color: #475569;
   line-height: 1.6;
+}
+
+/* Damier bleu glacier en arrière-plan comme sur l'affiche */
+.bg-poster-checkers {
+  background-color: #ffffff;
+  background-image: 
+    linear-gradient(45deg, #d8f1fa 25%, transparent 25%), 
+    linear-gradient(-45deg, #d8f1fa 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #d8f1fa 75%), 
+    linear-gradient(-45deg, transparent 75%, #d8f1fa 75%);
+  background-size: 90px 90px;
+  background-position: 0 0, 0 45px, 45px -45px, -45px 0;
+}
+
+/* Ruban trapézoïdal biseauté façon affiche */
+.ribbon-slant {
+  clip-path: polygon(0 0, 100% 0, 96% 100%, 0% 100%);
+}
+
+.ribbon-slant-both {
+  clip-path: polygon(2% 0, 100% 0, 98% 100%, 0% 100%);
+}
+
+/* Texte blanc avec contour net (style tarifs & animations de l'affiche) */
+.text-stroke-green {
+  color: #ffffff;
+  -webkit-text-stroke: 1.5px #1b6b42;
+  text-shadow: 2px 2px 0px #1b6b42;
+}
+
+.text-stroke-blue {
+  color: #ffffff;
+  -webkit-text-stroke: 1.5px #1e6091;
+  text-shadow: 2px 2px 0px #1e6091;
+}
+
+.text-stroke-dark {
+  color: #ffffff;
+  -webkit-text-stroke: 1.2px #1e293b;
+  text-shadow: 2px 2px 0px #1e293b;
 }

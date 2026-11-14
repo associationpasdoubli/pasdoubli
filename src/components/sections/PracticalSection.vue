@@ -17,8 +17,8 @@
         <div class="bg-white rounded-3xl p-7 border border-slate-200 shadow-sm flex flex-col gap-4">
           <h3 class="text-xl font-bold text-slate-900">Lieu du Rendez-vous </h3>
           <p class="text-slate-600 text-sm leading-relaxed">
-            <strong>Salle des fêtes communale</strong><br>
-            Rue des Écoles / Complexe sportif<br>
+            <strong>Square des anciens combattants</strong><br>
+            Chemin des dames (devant la mairie)<br>
             37270 Athée-sur-Cher 
           </p>
           <div class="pt-2 text-xs text-slate-500 space-y-1">
