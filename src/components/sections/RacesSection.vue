@@ -1,34 +1,45 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { supabase } from '../../services/supabase';
 import runnerImg from '../../assets/affiche.png';
 
-// 1. LES COURSES (4 formats chronométrés / enfants)
+const helloAssoUrl = ref('https://www.helloasso.com/associations/pas-d-oubli');
+
+onMounted(async () => {
+  const { data } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', 'helloasso_url')
+    .maybeSingle();
+  if (data?.value) helloAssoUrl.value = data.value;
+});
+
 const courses = [
   {
     id: 'course-10km',
     distance: '10 KM',
     title: 'COURSE + DE 16 ANS',
-    subtitle: 'Course chronométrée officielle',
+    subtitle: 'Course chronométrée',
     priceLabel: '10 €',
     isFreeDonation: false,
     ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
     priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
-    startTime: '',
+    startTime: 'à définir',
     terrain: 'Chemin et route',
     condition: 'PPS ou licence FFA (+16 ans)',
-    description: 'Le parcours phare de 10 km au départ du Square des Anciens Combattants d\'Athée-sur-Cher. Chronométrage officiel, médaille finisher et t-shirt offert.'
+    description: 'Parcours de 10 km au départ du Square des Anciens Combattants d\'Athée-sur-Cher.'
   },
   {
     id: 'course-6km',
     distance: '6 KM',
     title: 'COURSE + DE 16 ANS',
-    subtitle: 'Course populaire',
+    subtitle: 'Course chronométrée',
     priceLabel: '6 €',
     isFreeDonation: false,
     ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
     priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
-    startTime: '',
-    terrain: 'Chemin et route',
+    startTime: 'à définir',
+    terrain: 'Route',
     condition: 'PPS ou licence FFA (+16 ans)',
     description: 'Une distance dynamique accessible à tous les coureurs dès 16 ans pour se dépasser dans une ambiance conviviale.'
   },
@@ -36,13 +47,13 @@ const courses = [
     id: 'course-3km',
     distance: '3 KM',
     title: 'COURSE 10 / 16 ANS',
-    subtitle: 'Course jeunes & découverte',
+    subtitle: 'Course jeunes chronométrée',
     priceLabel: '3 €',
     isFreeDonation: false,
     ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
     priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
-    startTime: '',
-    terrain: 'Chemin et route',
+    startTime: 'à définir',
+    terrain: 'Route',
     condition: 'Jeunes de 10 à 16 ans (accord parental)',
     description: 'Un tracé court et rapide spécialement calibré pour les jeunes coureurs de 10 à 16 ans.'
   },
@@ -50,19 +61,18 @@ const courses = [
     id: 'course-1-2km',
     distance: '1,2 KM',
     title: 'COURSE - DE 10 ANS',
-    subtitle: 'Course enfants',
+    subtitle: 'Course enfants chronométrée',
     priceLabel: 'DON LIBRE',
     isFreeDonation: true,
     ribbonBg: 'bg-[#0284c7] group-hover:bg-[#0369a1]',
     priceBorder: 'border-[#1e6091] text-[#1e6091] bg-sky-50 group-hover:bg-sky-100',
-    startTime: '',
+    startTime: 'à définir',
     terrain: 'Boucle sécurisée au village',
-    condition: 'Enfants de moins de 10 ans',
-    description: 'La course dédiée aux enfants de moins de 10 ans ! Participation sur don libre au profit de France Alzheimer 37, médaille finisher pour chaque enfant.'
+    condition: 'Enfants de moins de 10 ans (accord parental)',
+    description: 'La course dédiée aux enfants de moins de 10 ans !'
   }
 ];
 
-// 2. LES MARCHES (2 formats solidaires ouverts à tous sans certificat)
 const marches = [
   {
     id: 'marche-6km',
@@ -73,10 +83,10 @@ const marches = [
     isFreeDonation: false,
     ribbonBg: 'bg-[#0d9488] group-hover:bg-[#0f766e]',
     priceBorder: 'border-[#0d9488] text-[#0d9488] group-hover:bg-teal-50',
-    startTime: '',
-    terrain: 'Chemin et route',
+    startTime: 'à définir',
+    terrain: 'Route',
     condition: 'Ouvert à tous • Sans certificat médical',
-    description: 'Une randonnée solidaire de 6 km sans chronomètre pour soutenir France Alzheimer 37 à votre rythme, en famille ou entre amis.'
+    description: 'Une marche solidaire de 6 km sans chronomètre pour soutenir France Alzheimer 37 en famille ou entre amis.'
   },
   {
     id: 'marche-3km',
@@ -87,10 +97,10 @@ const marches = [
     isFreeDonation: false,
     ribbonBg: 'bg-[#0d9488] group-hover:bg-[#0f766e]',
     priceBorder: 'border-[#0d9488] text-[#0d9488] group-hover:bg-teal-50',
-    startTime: '',
-    terrain: 'Plat & accessible',
+    startTime: 'à définir',
+    terrain: 'Route',
     condition: 'Ouvert à tous • Sans certificat médical',
-    description: 'Un parcours plat et sécurisé permettant aux familles, enfants et seniors de participer ensemble à la mobilisation.'
+    description: 'Une marche solidaire de 6 km sans chronomètre pour soutenir France Alzheimer 37 en famille ou entre amis.'
   }
 ];
 
@@ -112,21 +122,25 @@ const selectedRace = ref(null);
     <div class="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="xl:pr-56">
         
-        <!-- En-tête de section -->
+        <!-- En-tête -->
         <div class="text-center lg:text-left max-w-2xl mx-auto lg:mx-0 mb-12">
+          
           <h2 class="text-3xl sm:text-5xl font-black uppercase text-[#1f7a4c] tracking-tight">
             Les Épreuves & Tarifs
           </h2>
           <p class="text-slate-600 text-sm sm:text-base mt-2">
-            Chacun peut agir à petite échelle. Chaque participation, chaque échange et chaque geste compte
+            Cliquez sur une épreuve pour consulter les modalités d'inscription. Les horaires arrivent bientôt!
           </p>
         </div>
 
         <div class="space-y-12 select-none">
           
-          <!-- ================= BLOC 1 : LES COURSES ================= -->
+          <!-- BLOC 1 : LES COURSES -->
           <div>
             <div class="flex items-center gap-3 mb-5">
+              <span class="w-8 h-8 rounded-lg bg-[#1f7a4c] text-white flex items-center justify-center text-sm shadow-2xs">
+                <i class="fa-solid fa-person-running"></i>
+              </span>
               <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
                 Les Courses
               </h3>
@@ -140,7 +154,6 @@ const selectedRace = ref(null);
                 @click="selectedRace = race"
                 class="group flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-5 cursor-pointer transition-transform duration-200 hover:translate-x-1"
               >
-                <!-- Ruban incliné -->
                 <div :class="[race.ribbonBg, 'flex-1 text-white px-5 sm:px-7 py-4 ribbon-slant shadow-md flex items-center justify-between gap-4 transition-colors']">
                   <div class="flex items-center gap-4 sm:gap-6">
                     <span class="text-3xl sm:text-5xl font-black tracking-tighter leading-none whitespace-nowrap">
@@ -163,7 +176,6 @@ const selectedRace = ref(null);
                   </span>
                 </div>
 
-                <!-- Tarif encadré net -->
                 <div class="sm:w-44 flex items-center justify-between sm:justify-center flex-shrink-0">
                   <span class="text-xs font-bold uppercase text-slate-500 sm:hidden">Tarif :</span>
                   <span
@@ -180,9 +192,12 @@ const selectedRace = ref(null);
             </div>
           </div>
 
-          <!-- ================= BLOC 2 : LES MARCHES ================= -->
+          <!-- BLOC 2 : LES MARCHES -->
           <div>
             <div class="flex items-center gap-3 mb-5">
+              <span class="w-8 h-8 rounded-lg bg-[#0d9488] text-white flex items-center justify-center text-sm shadow-2xs">
+                <i class="fa-solid fa-person-walking"></i>
+              </span>
               <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
                 Les Marches Solidaires
               </h3>
@@ -199,7 +214,6 @@ const selectedRace = ref(null);
                 @click="selectedRace = marche"
                 class="group flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-5 cursor-pointer transition-transform duration-200 hover:translate-x-1"
               >
-                <!-- Ruban incliné turquoise -->
                 <div :class="[marche.ribbonBg, 'flex-1 text-white px-5 sm:px-7 py-4 ribbon-slant shadow-md flex items-center justify-between gap-4 transition-colors']">
                   <div class="flex items-center gap-4 sm:gap-6">
                     <span class="text-3xl sm:text-5xl font-black tracking-tighter leading-none whitespace-nowrap">
@@ -222,7 +236,6 @@ const selectedRace = ref(null);
                   </span>
                 </div>
 
-                <!-- Tarif encadré turquoise -->
                 <div class="sm:w-44 flex items-center justify-between sm:justify-center flex-shrink-0">
                   <span class="text-xs font-bold uppercase text-slate-500 sm:hidden">Tarif :</span>
                   <span
@@ -240,11 +253,11 @@ const selectedRace = ref(null);
 
         </div>
 
-        <!-- Encart d'inscription global -->
+        <!-- ENCART REDIRECTION HELLOASSO -->
         <div class="mt-12 bg-sky-50/90 border-[3px] border-[#1f7a4c] rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-5 shadow-xs">
           <div class="text-center sm:text-left">
             <p class="text-xs sm:text-sm text-slate-800 font-bold">
-              Ouverture officielle des inscriptions en ligne le <span class="text-[#1f7a4c] font-black underline">14 décembre</span>.
+              Ouverture officielle des inscriptions sur <span class="text-[#1f7a4c] font-black">HelloAsso</span> le <span class="underline">14 décembre</span>.
             </p>
             <p class="text-xs text-slate-500 mt-0.5">
               Médaille finisher & t-shirt offerts • 100% des bénéfices reversés à France Alzheimer 37.
@@ -252,10 +265,13 @@ const selectedRace = ref(null);
           </div>
 
           <a
-            href="#inscription"
-            class="w-full sm:w-auto px-7 py-3.5 bg-[#1f7a4c] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider ribbon-slant-both shadow-md transition hover:-translate-y-0.5 text-center whitespace-nowrap"
+            :href="helloAssoUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="w-full sm:w-auto px-7 py-3.5 bg-[#1f7a4c] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider ribbon-slant-both shadow-md transition hover:-translate-y-0.5 text-center whitespace-nowrap flex items-center justify-center gap-2"
           >
-            S'inscrire en ligne
+            <span>S'inscrire sur HelloAsso</span>
+            <i class="fa-solid fa-arrow-up-right-from-square text-[11px]"></i>
           </a>
         </div>
 
@@ -313,11 +329,14 @@ const selectedRace = ref(null);
             Fermer
           </button>
           <a
-            href="#inscription"
+            :href="helloAssoUrl"
+            target="_blank"
+            rel="noopener noreferrer"
             @click="selectedRace = null"
-            class="px-6 py-2.5 bg-[#1f7a4c] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-sm"
+            class="px-6 py-2.5 bg-[#1f7a4c] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-sm flex items-center gap-2"
           >
-            Inscription (14 déc.)
+            <span>S'inscrire (HelloAsso)</span>
+            <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
           </a>
         </div>
       </div>

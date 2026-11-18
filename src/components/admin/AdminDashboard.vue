@@ -74,11 +74,18 @@ const canAccessTab = (tab) => {
   if (tab === 'faq') return r === 'communication';
   if (tab === 'sponsors') return r === 'sponsor';
   if (tab === 'cagnotte') return r === 'tresorerie';
+  if (tab === 'programme') return isDirection.value;
   return false;
 };
 
 const currentTab = ref('poles');
 const currentSponsorSubTab = ref('annuaire'); // 'annuaire', 'besoins', 'partenaires'
+const showMobileMenu = ref(false);
+
+const selectAdminTab = (tab) => {
+  currentTab.value = tab;
+  showMobileMenu.value = false;
+};
 
 // Droits spécifiques
 const isLogistiqueOrDirection = computed(() => isDirection.value || currentRole.value === 'logistique');
@@ -178,7 +185,6 @@ const sponsorMaterialRequests = computed(() => {
   return materialRequests.value.filter(m => m.demande_sponsor === true);
 });
 
-// Calcul du budget à décaisser : seul 'sponsor_trouve' déduit le coût à 0 €
 const totalEstimatedBudget = computed(() => {
   return materialRequests.value.reduce((acc, item) => {
     if (item.statut_sponsor === 'sponsor_trouve') return acc;
@@ -330,12 +336,14 @@ const fetchProfileAndData = async () => {
   }
 
   currentTab.value = 'poles';
-  loadPermittedData();
+  await loadPermittedData();
 };
 
 const loadPermittedData = async () => {
   loadPoleData();
   fetchMaterialRequests();
+  fetchProgramAndSettings();
+  fetchVillageItems();
 
   if (canAccessTab('sponsors')) {
     const { data } = await supabase.from('sponsors').select('*').order('id', { ascending: true });
@@ -652,9 +660,7 @@ const askSponsorsForMaterial = async (item) => {
   }
 };
 
-// Cycle de décision complet du Pôle Sponsors
 const handleSponsorResponse = async (item, decision) => {
-  // 1. Refus de chercher
   if (decision === 'refuse') {
     const { error } = await supabase
       .from('material_requests')
@@ -668,7 +674,6 @@ const handleSponsorResponse = async (item, decision) => {
     return;
   }
 
-  // 2. Accepte de chercher -> en_recherche + création post-it dans "À faire"
   if (decision === 'accepte_recherche') {
     const taskTitle = `Recherche sponsor : ${item.article} (x${item.quantite})`;
     const taskDesc = `Matériel : ${item.article} (x${item.quantite}) demandé par ${item.pole}.
@@ -709,7 +714,6 @@ Prix estimé : ${item.estimated_price ? `${item.estimated_price} €/u` : 'Incon
     return;
   }
 
-  // 3. Partenaire trouvé -> sponsor_trouve (validation automatique sans débourser d'argent)
   if (decision === 'trouve') {
     const { error } = await supabase
       .from('material_requests')
@@ -731,7 +735,6 @@ Prix estimé : ${item.estimated_price ? `${item.estimated_price} €/u` : 'Incon
     return;
   }
 
-  // 4. Abandon / Rétractation -> non_finance (la trésorerie et la logistique reprennent la main)
   if (decision === 'abandon') {
     if (!confirm('Déclarer que ce matériel n\'a pas pu être sponsorisé ? La logistique et la trésorerie devront reprendre la main et valider l\'achat.')) {
       return;
@@ -1182,6 +1185,323 @@ const handleSaveFundraising = async () => {
   if (!error) triggerToast('Cagnotte et inscrits mis à jour en direct !');
 };
 
+// ================= GESTION PROGRAMME & LIEN HELLOASSO (DIRECTION) ================= //
+const programItems = ref([]);
+const programPeriodFilter = ref('matin');
+const showProgramModal = ref(false);
+const editingProgramItem = ref(null);
+const helloAssoSetting = ref('https://www.helloasso.com/associations/pas-d-oubli');
+
+const programForm = ref({
+  periode: 'matin',
+  time_label: '',
+  tag: '',
+  title: '',
+  description: ''
+});
+
+const fetchProgramAndSettings = async () => {
+  const { data: progData } = await supabase
+    .from('program_schedule')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true });
+  if (progData) programItems.value = progData;
+
+  const { data: settingData } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', 'helloasso_url')
+    .maybeSingle();
+  if (settingData?.value) helloAssoSetting.value = settingData.value;
+};
+
+const filteredProgramItems = computed(() => {
+  return programItems.value
+    .filter(p => p.periode === programPeriodFilter.value)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+});
+
+const saveHelloAssoUrl = async () => {
+  const { error } = await supabase
+    .from('site_settings')
+    .upsert({ key: 'helloasso_url', value: helloAssoSetting.value.trim() });
+  if (!error) triggerToast('Lien HelloAsso mis à jour sur le site !');
+};
+
+const openCreateProgram = () => {
+  editingProgramItem.value = null;
+  programForm.value = {
+    periode: programPeriodFilter.value,
+    time_label: '',
+    tag: '',
+    title: '',
+    description: ''
+  };
+  showProgramModal.value = true;
+};
+
+const openEditProgram = (item) => {
+  editingProgramItem.value = item;
+  programForm.value = {
+    periode: item.periode,
+    time_label: item.time_label,
+    tag: item.tag || '',
+    title: item.title,
+    description: item.description || ''
+  };
+  showProgramModal.value = true;
+};
+
+const saveProgramItem = async () => {
+  if (!programForm.value.time_label.trim() || !programForm.value.title.trim()) {
+    triggerToast("L'horaire et l'intitulé sont obligatoires.");
+    return;
+  }
+
+  const payload = {
+    periode: programForm.value.periode,
+    time_label: programForm.value.time_label.trim(),
+    tag: programForm.value.tag?.trim() || null,
+    title: programForm.value.title.trim(),
+    description: programForm.value.description?.trim() || null
+  };
+
+  if (editingProgramItem.value) {
+    const { error } = await supabase
+      .from('program_schedule')
+      .update(payload)
+      .eq('id', editingProgramItem.value.id);
+
+    if (!error) {
+      Object.assign(editingProgramItem.value, payload);
+      showProgramModal.value = false;
+      triggerToast('Horaire mis à jour.');
+    }
+  } else {
+    const maxOrder = filteredProgramItems.value.reduce((max, i) => Math.max(max, i.sort_order || 0), 0);
+    const { data, error } = await supabase
+      .from('program_schedule')
+      .insert([{ ...payload, sort_order: maxOrder + 1 }])
+      .select();
+
+    if (!error && data) {
+      programItems.value.push(data[0]);
+      showProgramModal.value = false;
+      triggerToast('Moment ajouté au programme !');
+    }
+  }
+};
+
+const deleteProgramItem = async (id) => {
+  if (!confirm('Supprimer cet horaire du programme ?')) return;
+  const { error } = await supabase.from('program_schedule').delete().eq('id', id);
+  if (!error) {
+    programItems.value = programItems.value.filter(p => p.id !== id);
+    triggerToast('Horaire supprimé.');
+  }
+};
+
+const moveProgramItem = async (index, direction) => {
+  const list = [...filteredProgramItems.value];
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= list.length) return;
+
+  const temp = list[index];
+  list[index] = list[targetIndex];
+  list[targetIndex] = temp;
+
+  for (let i = 0; i < list.length; i++) {
+    list[i].sort_order = i;
+    await supabase.from('program_schedule').update({ sort_order: i }).eq('id', list[i].id);
+  }
+  triggerToast('Ordre du programme mis à jour !');
+};
+
+// ================= GESTION VILLAGE SOLIDAIRE (DIRECTION) ================= //
+const villageItems = ref([]);
+const showVillageModal = ref(false);
+const editingVillageItem = ref(null);
+const uploadingVillageImg = ref(false);
+
+const villageForm = ref({
+  title: '',
+  tag: '',
+  description: '',
+  icon: 'fa-tent',
+  image_url: '',
+  color_theme: 'amber',
+  layout_zone: 'auto'
+});
+
+const villageIconOptions = [
+  { id: 'fa-tent', label: 'Stand / Village' },
+  { id: 'fa-hand-holding-heart', label: 'Association / Solidarité' },
+  { id: 'fa-mug-hot', label: 'Buvette / Café' },
+  { id: 'fa-utensils', label: 'Restauration' },
+  { id: 'fa-puzzle-piece', label: 'Atelier Mémoire / Jeux' },
+  { id: 'fa-music', label: 'Animation Musicale' },
+  { id: 'fa-medal', label: 'Podium / Récompenses' },
+  { id: 'fa-child-reaching', label: 'Espace Enfants' }
+];
+
+const fetchVillageItems = async () => {
+  const { data, error } = await supabase
+    .from('village_activities')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true });
+
+  if (error) {
+    console.error('Erreur chargement village:', error);
+    return;
+  }
+  if (data) {
+    villageItems.value = data;
+  }
+};
+
+const sortedVillageItems = computed(() => {
+  return [...villageItems.value].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+});
+
+const openCreateVillage = () => {
+  editingVillageItem.value = null;
+  villageForm.value = {
+    title: '',
+    tag: '',
+    description: '',
+    icon: 'fa-tent',
+    image_url: '',
+    color_theme: 'amber',
+    layout_zone: 'auto'
+  };
+  showVillageModal.value = true;
+};
+
+const openEditVillage = (item) => {
+  editingVillageItem.value = item;
+  villageForm.value = {
+    title: item.title,
+    tag: item.tag || '',
+    description: item.description || '',
+    icon: item.icon || 'fa-tent',
+    image_url: item.image_url || '',
+    color_theme: item.color_theme || 'amber',
+    layout_zone: item.layout_zone || 'auto'
+  };
+  showVillageModal.value = true;
+};
+
+const handleVillageImageUpload = async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  uploadingVillageImg.value = true;
+  try {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('village-icons')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data: publicUrlData } = supabase.storage
+      .from('village-icons')
+      .getPublicUrl(fileName);
+
+    villageForm.value.image_url = publicUrlData.publicUrl;
+    triggerToast('Image importée avec succès !');
+  } catch (err) {
+    console.error('Erreur upload image:', err);
+    triggerToast("Impossible d'importer le fichier (vérifiez le bucket 'village-icons' ou collez une URL).");
+  } finally {
+    uploadingVillageImg.value = false;
+  }
+};
+
+const saveVillageItem = async () => {
+  if (!villageForm.value.title.trim()) {
+    triggerToast('Le titre du stand ou de l’animation est obligatoire.');
+    return;
+  }
+
+  const payload = {
+    title: villageForm.value.title.trim(),
+    tag: villageForm.value.tag?.trim() || null,
+    description: villageForm.value.description?.trim() || null,
+    icon: villageForm.value.icon || 'fa-tent',
+    image_url: villageForm.value.image_url?.trim() || null,
+    color_theme: villageForm.value.color_theme || 'amber',
+    layout_zone: villageForm.value.layout_zone || 'auto'
+  };
+
+  if (editingVillageItem.value) {
+    const { data, error } = await supabase
+      .from('village_activities')
+      .update(payload)
+      .eq('id', editingVillageItem.value.id)
+      .select();
+
+    if (error) {
+      console.error('Erreur update village:', error);
+      triggerToast(`Erreur : ${error.message}`);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      Object.assign(editingVillageItem.value, data[0]);
+    }
+    showVillageModal.value = false;
+    triggerToast('Stand / animation mis à jour !');
+  } else {
+    const maxOrder = sortedVillageItems.value.reduce((max, i) => Math.max(max, i.sort_order || 0), 0);
+    const { data, error } = await supabase
+      .from('village_activities')
+      .insert([{ ...payload, sort_order: maxOrder + 1 }])
+      .select();
+
+    if (error) {
+      console.error('Erreur insert village:', error);
+      triggerToast(`Erreur lors de l'enregistrement : ${error.message}`);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      villageItems.value.push(data[0]);
+      showVillageModal.value = false;
+      triggerToast('Ajouté au Village Solidaire !');
+    }
+  }
+};
+
+const deleteVillageItem = async (id) => {
+  if (!confirm('Supprimer cet élément du Village Solidaire ?')) return;
+  const { error } = await supabase.from('village_activities').delete().eq('id', id);
+  if (!error) {
+    villageItems.value = villageItems.value.filter(v => v.id !== id);
+    triggerToast('Élément supprimé.');
+  }
+};
+
+const moveVillageItem = async (index, direction) => {
+  const list = [...sortedVillageItems.value];
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= list.length) return;
+
+  const temp = list[index];
+  list[index] = list[targetIndex];
+  list[targetIndex] = temp;
+
+  for (let i = 0; i < list.length; i++) {
+    list[i].sort_order = i;
+    await supabase.from('village_activities').update({ sort_order: i }).eq('id', list[i].id);
+  }
+  triggerToast('Ordre du Village Solidaire mis à jour !');
+};
+
 onMounted(async () => {
   const { data } = await supabase.auth.getSession();
   user.value = data.session?.user || null;
@@ -1238,51 +1558,61 @@ onMounted(async () => {
   <div v-else class="min-h-screen bg-slate-100 p-4 sm:p-8">
     <div class="max-w-7xl mx-auto">
       
-      <!-- En-tête -->
+      <!-- EN-TÊTE -->
       <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-200 flex-wrap gap-4">
-        <div>
-          <div class="flex items-center gap-3">
-            <h1 class="text-2xl font-black text-slate-900">Espace {{ userRoleTitle }}</h1>
-            <span 
-              v-if="isDirection" 
-              class="px-3 py-1 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-full shadow-xs flex items-center gap-1.5"
-            >
-              <i class="fa-solid fa-crown text-[10px]"></i> Direction
-            </span>
-          </div>
-          <p class="text-xs text-slate-500 mt-0.5">Connecté sous {{ user.email }}</p>
-        </div>
-
-        <div class="flex items-center gap-2.5 flex-wrap">
-          <button 
-            @click="openSwitchAccount" 
-            class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            title="Se connecter avec un autre compte ou pôle"
+        <div class="flex items-center gap-3">
+          <!-- BOUTON HAMBURGER UNIQUEMENT SUR MOBILE (md:hidden) -->
+          <button
+            @click="showMobileMenu = true"
+            class="md:hidden w-10 h-10 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center shadow-xs transition cursor-pointer flex-shrink-0"
+            title="Ouvrir le menu"
           >
-            <i class="fa-solid fa-users-gear text-emerald-600"></i>
-            <span>Changer de compte</span>
+            <i class="fa-solid fa-bars text-base"></i>
           </button>
 
-          <a href="/" class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs">
-            <i class="fa-solid fa-globe text-emerald-600"></i>Voir le site
+          <div>
+            <div class="flex items-center gap-2.5">
+              <h1 class="text-xl sm:text-2xl font-black text-slate-900">Espace {{ userRoleTitle }}</h1>
+              <span 
+                v-if="isDirection" 
+                class="px-2.5 py-0.5 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black text-[10px] uppercase tracking-wider rounded-full shadow-xs flex items-center gap-1"
+              >
+                <i class="fa-solid fa-crown text-[9px]"></i> Direction
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5">Connecté sous {{ user.email }}</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <button 
+            @click="openSwitchAccount" 
+            class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Changer de compte"
+          >
+            <i class="fa-solid fa-users-gear text-emerald-600"></i>
+            <span class="hidden sm:inline">Changer de compte</span>
+          </button>
+
+          <a href="/" class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs" title="Voir le site">
+            <i class="fa-solid fa-globe text-emerald-600"></i>
+            <span class="hidden sm:inline">Voir le site</span>
           </a>
 
-          <button @click="handleLogout" class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs">
-            <i class="fa-solid fa-right-from-bracket mr-1.5"></i>Déconnexion
+          <button @click="handleLogout" class="text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs" title="Déconnexion">
+            <i class="fa-solid fa-right-from-bracket"></i>
+            <span class="hidden sm:inline">Déconnexion</span>
           </button>
         </div>
       </div>
 
-      <!-- BANDEAU D'ONGLETS PRINCIPAL -->
-      <nav class="border-b border-slate-300/80 mb-8 overflow-hidden">
-        <div class="flex items-center gap-8 -mb-px flex-wrap">
-          
+      <!-- BARRE D'ONGLETS CLASSIQUE SUR ORDINATEUR UNIQUEMENT (hidden md:block) -->
+      <nav class="hidden md:block border-b border-slate-300/80 mb-8 overflow-hidden">
+        <div class="flex items-center gap-7 -mb-px flex-wrap">
           <button
             v-if="canAccessTab('poles')"
             @click="currentTab = 'poles'"
-            :class="currentTab === 'poles'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'poles' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-table-columns text-xs"></i>
@@ -1292,9 +1622,7 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('materiel')"
             @click="currentTab = 'materiel'"
-            :class="currentTab === 'materiel'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'materiel' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-boxes-stacked text-xs"></i>
@@ -1304,9 +1632,7 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('budget_tresorerie')"
             @click="currentTab = 'budget_tresorerie'"
-            :class="currentTab === 'budget_tresorerie'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'budget_tresorerie' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
@@ -1316,9 +1642,7 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('messages')"
             @click="currentTab = 'messages'"
-            :class="currentTab === 'messages'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'messages' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-regular fa-envelope text-xs"></i>
@@ -1328,9 +1652,7 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('benevoles')"
             @click="currentTab = 'benevoles'"
-            :class="currentTab === 'benevoles'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'benevoles' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-users text-xs"></i>
@@ -1340,9 +1662,7 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('faq')"
             @click="currentTab = 'faq'"
-            :class="currentTab === 'faq'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'faq' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-regular fa-circle-question text-xs"></i>
@@ -1352,9 +1672,7 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('sponsors')"
             @click="currentTab = 'sponsors'"
-            :class="currentTab === 'sponsors'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'sponsors' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-handshake text-xs"></i>
@@ -1365,17 +1683,157 @@ onMounted(async () => {
           <button
             v-if="canAccessTab('cagnotte')"
             @click="currentTab = 'cagnotte'"
-            :class="currentTab === 'cagnotte'
-              ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold'
-              : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            :class="currentTab === 'cagnotte' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
             <i class="fa-solid fa-hand-holding-dollar text-xs"></i>
             <span>Actualiser Cagnotte</span>
           </button>
 
+          <!-- ONGLET EXCLUSIF DIRECTION / VICE-PRÉSIDENTE -->
+          <button
+            v-if="isDirection"
+            @click="currentTab = 'programme'"
+            :class="currentTab === 'programme' ? 'text-amber-700 border-b-2 border-amber-500 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
+          >
+            <i class="fa-solid fa-clock text-xs text-amber-500"></i>
+            <span>Programme, Village & HelloAsso</span>
+          </button>
         </div>
       </nav>
+
+      <!-- TIROIR HAMBURGER UNIQUEMENT SUR MOBILE (md:hidden) -->
+      <div v-if="showMobileMenu" @click.self="showMobileMenu = false" class="fixed inset-0 z-50 md:hidden bg-black/50 backdrop-blur-xs flex">
+        <div class="bg-white w-72 max-w-[85vw] h-full shadow-2xl p-6 flex flex-col justify-between overflow-y-auto">
+          <div>
+            <div class="flex items-center justify-between pb-4 mb-5 border-b border-slate-100">
+              <div>
+                <span class="text-[10px] font-black uppercase tracking-widest text-emerald-700">Pas d'oubli 2027</span>
+                <h2 class="text-lg font-black text-slate-900">Menu</h2>
+              </div>
+              <button @click="showMobileMenu = false" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <nav class="space-y-1.5">
+              <button
+                v-if="canAccessTab('poles')"
+                @click="selectAdminTab('poles')"
+                :class="currentTab === 'poles' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center gap-3 transition cursor-pointer text-left"
+              >
+                <i class="fa-solid fa-table-columns w-4 text-center"></i>
+                <span>Tableau Kanban</span>
+              </button>
+
+              <button
+                v-if="canAccessTab('materiel')"
+                @click="selectAdminTab('materiel')"
+                :class="currentTab === 'materiel' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center justify-between transition cursor-pointer text-left"
+              >
+                <span class="flex items-center gap-3">
+                  <i class="fa-solid fa-boxes-stacked w-4 text-center"></i>
+                  <span>Besoins Matériel</span>
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono" :class="currentTab === 'materiel' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+                  {{ filteredMaterialRequests.length }}
+                </span>
+              </button>
+
+              <button
+                v-if="canAccessTab('budget_tresorerie')"
+                @click="selectAdminTab('budget_tresorerie')"
+                :class="currentTab === 'budget_tresorerie' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center gap-3 transition cursor-pointer text-left"
+              >
+                <i class="fa-solid fa-file-invoice-dollar w-4 text-center"></i>
+                <span>Budget & Pôles</span>
+              </button>
+
+              <button
+                v-if="canAccessTab('sponsors')"
+                @click="selectAdminTab('sponsors')"
+                :class="currentTab === 'sponsors' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center justify-between transition cursor-pointer text-left"
+              >
+                <span class="flex items-center gap-3">
+                  <i class="fa-solid fa-handshake w-4 text-center"></i>
+                  <span>Pôle Sponsors</span>
+                </span>
+                <span v-if="sponsorMaterialRequests.filter(s => s.statut_sponsor === 'en_attente').length > 0" class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              </button>
+
+              <button
+                v-if="canAccessTab('messages')"
+                @click="selectAdminTab('messages')"
+                :class="currentTab === 'messages' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center justify-between transition cursor-pointer text-left"
+              >
+                <span class="flex items-center gap-3">
+                  <i class="fa-regular fa-envelope w-4 text-center"></i>
+                  <span>Messages</span>
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono" :class="currentTab === 'messages' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+                  {{ messages.length }}
+                </span>
+              </button>
+
+              <button
+                v-if="canAccessTab('benevoles')"
+                @click="selectAdminTab('benevoles')"
+                :class="currentTab === 'benevoles' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center justify-between transition cursor-pointer text-left"
+              >
+                <span class="flex items-center gap-3">
+                  <i class="fa-solid fa-users w-4 text-center"></i>
+                  <span>Bénévoles</span>
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono" :class="currentTab === 'benevoles' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+                  {{ volunteers.length }}
+                </span>
+              </button>
+
+              <button
+                v-if="canAccessTab('faq')"
+                @click="selectAdminTab('faq')"
+                :class="currentTab === 'faq' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center gap-3 transition cursor-pointer text-left"
+              >
+                <i class="fa-regular fa-circle-question w-4 text-center"></i>
+                <span>FAQ ({{ faqs.length }})</span>
+              </button>
+
+              <button
+                v-if="canAccessTab('cagnotte')"
+                @click="selectAdminTab('cagnotte')"
+                :class="currentTab === 'cagnotte' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center gap-3 transition cursor-pointer text-left"
+              >
+                <i class="fa-solid fa-hand-holding-dollar w-4 text-center"></i>
+                <span>Actualiser Cagnotte</span>
+              </button>
+
+              <!-- ONGLET EXCLUSIF DIRECTION / VICE-PRÉSIDENTE -->
+              <button
+                v-if="isDirection"
+                @click="selectAdminTab('programme')"
+                :class="currentTab === 'programme' ? 'bg-amber-600 text-white font-bold shadow-xs' : 'text-amber-900 bg-amber-50/70 hover:bg-amber-100 font-bold'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center gap-3 transition cursor-pointer text-left mt-3 border border-amber-200"
+              >
+                <i class="fa-solid fa-clock w-4 text-center"></i>
+                <span>Programme, Village & HelloAsso</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="pt-4 border-t border-slate-100 text-[11px] text-slate-400">
+            Connecté en tant que <strong class="text-slate-700">{{ userRoleTitle }}</strong>
+          </div>
+        </div>
+      </div>
 
       <!-- ================= VUE KANBAN ================= -->
       <div v-if="currentTab === 'poles'" class="space-y-6">
@@ -1589,7 +2047,6 @@ onMounted(async () => {
                     <span v-else class="text-slate-400 italic text-[11px]">Non renseigné</span>
                   </td>
 
-                  <!-- AVIS LOGISTIQUE -->
                   <td class="p-4 align-top">
                     <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
@@ -1613,7 +2070,6 @@ onMounted(async () => {
                     </div>
                   </td>
 
-                  <!-- AVIS TRÉSORERIE -->
                   <td class="p-4 align-top">
                     <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
@@ -1630,7 +2086,6 @@ onMounted(async () => {
                     </div>
                   </td>
 
-                  <!-- STATUT SPONSOR (DIFFÉRENCIÉ RECHERCHE / TROUVÉ) -->
                   <td class="p-4 align-top">
                     <div v-if="item.demande_sponsor">
                       <span v-if="item.statut_sponsor === 'sponsor_trouve'" class="px-2.5 py-1 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
@@ -1700,6 +2155,237 @@ onMounted(async () => {
             </table>
           </div>
         </div>
+      </div>
+
+      <!-- ================= VUE PROGRAMME, VILLAGE & LIEN HELLOASSO (DIRECTION / VICE-PRÉSIDENTE) ================= -->
+      <div v-if="currentTab === 'programme' && isDirection" class="space-y-8">
+        
+        <!-- Bloc 1 : Lien HelloAsso -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+          <h3 class="text-base font-black text-slate-900 flex items-center gap-2 mb-1">
+            <i class="fa-solid fa-link text-emerald-600"></i>
+            <span>Lien d'inscription HelloAsso</span>
+          </h3>
+          <p class="text-xs text-slate-500 mb-4">Ce lien est utilisé par les boutons « S'inscrire » de la section Épreuves.</p>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <input
+              v-model="helloAssoSetting"
+              type="url"
+              placeholder="https://www.helloasso.com/..."
+              class="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-mono outline-none focus:border-emerald-600"
+            />
+            <button
+              @click="saveHelloAssoUrl"
+              class="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Enregistrer le lien
+            </button>
+          </div>
+        </div>
+
+        <!-- Bloc 2 : Organisation des horaires et de l'ordre du programme -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
+          <div class="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-calendar-day text-amber-500"></i>
+                <span>Organisation du Programme de la Journée</span>
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Modifiez les horaires, les intitulés et réorganisez l'ordre d'apparition sur le site.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200">
+                <button
+                  @click="programPeriodFilter = 'matin'"
+                  :class="programPeriodFilter === 'matin' ? 'bg-white text-emerald-700 font-bold shadow-2xs' : 'text-slate-600'"
+                  class="px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer"
+                >
+                  Matinée
+                </button>
+                <button
+                  @click="programPeriodFilter = 'aprem'"
+                  :class="programPeriodFilter === 'aprem' ? 'bg-white text-emerald-700 font-bold shadow-2xs' : 'text-slate-600'"
+                  class="px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer"
+                >
+                  Après-midi
+                </button>
+              </div>
+
+              <button
+                @click="openCreateProgram"
+                class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <i class="fa-solid fa-plus"></i>
+                <span>Ajouter un moment</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2.5">
+            <div
+              v-for="(item, index) in filteredProgramItems"
+              :key="item.id"
+              class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:bg-white transition"
+            >
+              <div class="flex items-center gap-3 sm:gap-4">
+                <div class="flex flex-col gap-1">
+                  <button
+                    @click="moveProgramItem(index, -1)"
+                    :disabled="index === 0"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Monter"
+                  >
+                    <i class="fa-solid fa-chevron-up"></i>
+                  </button>
+                  <button
+                    @click="moveProgramItem(index, 1)"
+                    :disabled="index === filteredProgramItems.length - 1"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Descendre"
+                  >
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </button>
+                </div>
+
+                <span class="font-mono font-black text-xs text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg w-20 sm:w-24 text-center flex-shrink-0">
+                  {{ item.time_label }}
+                </span>
+
+                <div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span v-if="item.tag" class="text-[10px] uppercase font-bold bg-slate-700 text-white px-2 py-0.5 rounded">
+                      {{ item.tag }}
+                    </span>
+                    <h4 class="font-bold text-slate-900 text-sm">{{ item.title }}</h4>
+                  </div>
+                  <p v-if="item.description" class="text-xs text-slate-500 mt-0.5">{{ item.description }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  @click="openEditProgram(item)"
+                  class="p-2 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 cursor-pointer"
+                  title="Modifier"
+                >
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button
+                  @click="deleteProgramItem(item.id)"
+                  class="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                  title="Supprimer"
+                >
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="filteredProgramItems.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+              Aucun créneau enregistré dans la base pour cette période (les horaires par défaut s'affichent sur le site).
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloc 3 : Organisation du Village Solidaire -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
+          <div class="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-tent text-emerald-600"></i>
+                <span>Organisation du Village Solidaire ({{ sortedVillageItems.length }})</span>
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Ajoutez des images/icônes, choisissez l'emplacement (Gauche ou Grille Droite) et réordonnez les éléments.
+              </p>
+            </div>
+
+            <button
+              @click="openCreateVillage"
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-plus"></i>
+              <span>Ajouter un stand / activité</span>
+            </button>
+          </div>
+
+          <div class="space-y-2.5">
+            <div
+              v-for="(item, index) in sortedVillageItems"
+              :key="item.id"
+              class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:bg-white transition"
+            >
+              <div class="flex items-center gap-3 sm:gap-4">
+                <div class="flex flex-col gap-1">
+                  <button
+                    @click="moveVillageItem(index, -1)"
+                    :disabled="index === 0"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Monter"
+                  >
+                    <i class="fa-solid fa-chevron-up"></i>
+                  </button>
+                  <button
+                    @click="moveVillageItem(index, 1)"
+                    :disabled="index === sortedVillageItems.length - 1"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Descendre"
+                  >
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </button>
+                </div>
+
+                <!-- Aperçu Image ou Icône -->
+                <div class="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-emerald-200">
+                  <img v-if="item.image_url" :src="item.image_url" :alt="item.title" class="w-full h-full object-cover" />
+                  <i v-else :class="['fa-solid', item.icon || 'fa-tent']"></i>
+                </div>
+
+                <div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h4 class="font-bold text-slate-900 text-sm">{{ item.title }}</h4>
+                    <span
+                      class="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded border"
+                      :class="item.layout_zone === 'left'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : item.layout_zone === 'right'
+                          ? 'bg-sky-50 text-sky-800 border-sky-200'
+                          : 'bg-slate-200 text-slate-700 border-slate-300'"
+                    >
+                      {{ item.layout_zone === 'left' ? 'Bandeau Gauche' : item.layout_zone === 'right' ? 'Grille Droite' : 'Auto' }}
+                    </span>
+                  </div>
+                  <p v-if="item.description" class="text-xs text-slate-500 mt-0.5 line-clamp-2">{{ item.description }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  @click="openEditVillage(item)"
+                  class="p-2 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 cursor-pointer"
+                  title="Modifier"
+                >
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button
+                  @click="deleteVillageItem(item.id)"
+                  class="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                  title="Supprimer"
+                >
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="sortedVillageItems.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+              Aucun stand enregistré en base (les éléments par défaut s'affichent sur le site).
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE ================= -->
@@ -1916,7 +2602,6 @@ onMounted(async () => {
       <!-- ================= VUE SPONSORS (3 SOUS-ONGLETS) ================= -->
       <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-6">
         
-        <!-- BANDEAU SOUS-ONGLETS -->
         <div class="border-b border-slate-200 overflow-hidden">
           <div class="flex items-center gap-6 -mb-px flex-wrap">
             <button
@@ -2095,7 +2780,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- 2. BESOINS À FAIRE SPONSORISER (DIFFÉRENCE EN COURS / TROUVÉ) -->
+        <!-- 2. BESOINS À FAIRE SPONSORISER -->
         <div v-if="currentSponsorSubTab === 'besoins'" class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-4">
             <div>
@@ -2150,7 +2835,6 @@ onMounted(async () => {
                     {{ req.estimated_price ? `${(req.estimated_price * req.quantite).toFixed(2)} €` : '—' }}
                   </td>
 
-                  <!-- État d'avancement -->
                   <td class="p-3">
                     <span v-if="req.statut_sponsor === 'sponsor_trouve'" class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1">
                       <i class="fa-solid fa-circle-check text-emerald-600"></i>
@@ -2177,9 +2861,7 @@ onMounted(async () => {
                     </span>
                   </td>
 
-                  <!-- Actions du Pôle Sponsor -->
                   <td class="p-3 text-right whitespace-nowrap">
-                    <!-- Cas 1 : En attente -> accepter de chercher ou refuser -->
                     <div v-if="req.statut_sponsor === 'en_attente'" class="flex items-center justify-end gap-1.5">
                       <button 
                         @click="handleSponsorResponse(req, 'accepte_recherche')"
@@ -2199,7 +2881,6 @@ onMounted(async () => {
                       </button>
                     </div>
 
-                    <!-- Cas 2 : En recherche -> Sponsor trouvé ! OU Abandonner -->
                     <div v-else-if="req.statut_sponsor === 'en_recherche'" class="flex items-center justify-end gap-1.5">
                       <button 
                         @click="handleSponsorResponse(req, 'trouve')"
@@ -2218,7 +2899,6 @@ onMounted(async () => {
                       </button>
                     </div>
 
-                    <!-- Cas 3 : Déjà trouvé -> Désistement éventuel -->
                     <div v-else-if="req.statut_sponsor === 'sponsor_trouve'" class="flex items-center justify-end gap-2">
                       <span class="text-[11px] font-black text-emerald-700">Validé</span>
                       <button 
@@ -2230,7 +2910,6 @@ onMounted(async () => {
                       </button>
                     </div>
 
-                    <!-- Cas 4 : Classé / Refusé / Abandonné -> Option de retenter -->
                     <div v-else class="flex items-center justify-end gap-1.5">
                       <button 
                         @click="handleSponsorResponse(req, 'accepte_recherche')"
@@ -2538,6 +3217,168 @@ onMounted(async () => {
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- MODALE AJOUT / MODIFICATION VILLAGE SOLIDAIRE -->
+  <div v-if="showVillageModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <button @click="showVillageModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <h3 class="text-lg font-black text-slate-900 mb-4">
+        {{ editingVillageItem ? 'Modifier ce stand / activité' : 'Ajouter au Village Solidaire' }}
+      </h3>
+
+      <form @submit.prevent="saveVillageItem" class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Titre *</label>
+          <input v-model="villageForm.title" required type="text" placeholder="Ex. Stand Gourmand & Crêpes" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs" />
+        </div>
+
+        <!-- CHOIX DE LA DISPOSITION -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Disposition dans la section</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              @click="villageForm.layout_zone = 'left'"
+              :class="villageForm.layout_zone === 'left' ? 'bg-emerald-700 text-white font-bold border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 px-2 text-[11px] rounded-xl border transition cursor-pointer text-center"
+            >
+              Bandeau Gauche
+            </button>
+            <button
+              type="button"
+              @click="villageForm.layout_zone = 'right'"
+              :class="villageForm.layout_zone === 'right' ? 'bg-emerald-700 text-white font-bold border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 px-2 text-[11px] rounded-xl border transition cursor-pointer text-center"
+            >
+              Grille Droite
+            </button>
+            <button
+              type="button"
+              @click="villageForm.layout_zone = 'auto'"
+              :class="villageForm.layout_zone === 'auto' ? 'bg-emerald-700 text-white font-bold border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'"
+              class="py-2 px-2 text-[11px] rounded-xl border transition cursor-pointer text-center"
+            >
+              Automatique
+            </button>
+          </div>
+        </div>
+
+        <!-- IMAGE PERSONNALISÉE (URL OU FICHIER) -->
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <label class="block text-xs font-bold uppercase text-slate-700">Image comme icône (optionnel)</label>
+          
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-white border border-slate-300 flex items-center justify-center overflow-hidden flex-shrink-0">
+              <img v-if="villageForm.image_url" :src="villageForm.image_url" alt="Aperçu" class="w-full h-full object-cover" />
+              <i v-else :class="['fa-solid', villageForm.icon, 'text-slate-400']"></i>
+            </div>
+
+            <div class="flex-1 space-y-1.5">
+              <input
+                v-model="villageForm.image_url"
+                type="url"
+                placeholder="Coller le lien d'une image (https://...)"
+                class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+              />
+              <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer">
+                <i class="fa-solid fa-upload"></i>
+                <span>{{ uploadingVillageImg ? 'Importation...' : 'Ou importer un fichier image' }}</span>
+                <input type="file" accept="image/*" @change="handleVillageImageUpload" class="hidden" />
+              </label>
+            </div>
+
+            <button
+              v-if="villageForm.image_url"
+              type="button"
+              @click="villageForm.image_url = ''"
+              class="text-xs text-rose-600 hover:underline cursor-pointer"
+              title="Retirer l'image"
+            >
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Couleur du carré</label>
+            <select v-model="villageForm.color_theme" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+              <option value="amber">Jaune / Ambre</option>
+              <option value="teal">Vert Menthe / Turquoise</option>
+              <option value="emerald">Vert Émeraude</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Icône de secours</label>
+            <select v-model="villageForm.icon" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+              <option v-for="ic in villageIconOptions" :key="ic.id" :value="ic.id">{{ ic.label }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Description</label>
+          <textarea v-model="villageForm.description" rows="3" placeholder="Présentez brièvement l'activité ou le stand..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs"></textarea>
+        </div>
+
+        <button type="submit" class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer mt-2">
+          {{ editingVillageItem ? 'Enregistrer' : 'Ajouter au village' }}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODALE AJOUT / MODIFICATION MOMENT PROGRAMME -->
+  <div v-if="showProgramModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+      <button @click="showProgramModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <h3 class="text-lg font-black text-slate-900 mb-4">
+        {{ editingProgramItem ? 'Modifier ce moment' : 'Ajouter un moment au programme' }}
+      </h3>
+
+      <form @submit.prevent="saveProgramItem" class="space-y-3.5">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Période</label>
+            <select v-model="programForm.periode" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+              <option value="matin">Matinée</option>
+              <option value="aprem">Après-midi</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Horaire *</label>
+            <input v-model="programForm.time_label" required type="text" placeholder="Ex. 09h45 ou à définir" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-mono" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Badge / Tag (optionnel)</label>
+          <input v-model="programForm.tag" type="text" placeholder="Ex. Départ, Convivialité, Conférence..." class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Titre du moment *</label>
+          <input v-model="programForm.title" required type="text" placeholder="Ex. Départ Course 10 km" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Sous-titre court (optionnel)</label>
+          <input v-model="programForm.description" type="text" placeholder="Ex. Épreuve chronométrée" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs" />
+        </div>
+
+        <button type="submit" class="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs transition cursor-pointer mt-2">
+          {{ editingProgramItem ? 'Enregistrer' : 'Ajouter au programme' }}
+        </button>
+      </form>
     </div>
   </div>
 
