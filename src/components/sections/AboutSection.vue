@@ -19,7 +19,7 @@ import logoUrl from '../../assets/logo.png';
         <div
           class="lg:col-span-7 space-y-4 text-slate-700 leading-relaxed text-sm sm:text-base"
         >
-          <p class="text-justify";>
+          <p class="text-justify">
             Née de la volonté de se mobiliser face à la maladie d’Alzheimer,
             notre association a pour objectif de sensibiliser le public, de
             soutenir la recherche et de contribuer à la lutte contre cette
