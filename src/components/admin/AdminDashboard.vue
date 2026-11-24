@@ -64,6 +64,9 @@ const accessiblePoles = computed(() => {
 const selectedPole = ref('direction');
 
 const canAccessTab = (tab) => {
+  // 'gestion_site' est strictement réservé au Président et à la Vice-Présidente
+  if (tab === 'gestion_site') return isDirection.value;
+
   if (isDirection.value) return true;
   const r = currentRole.value;
   if (tab === 'poles') return accessiblePoles.value.length > 0;
@@ -72,14 +75,13 @@ const canAccessTab = (tab) => {
   if (tab === 'messages') return r === 'communication';
   if (tab === 'benevoles') return r === 'communication';
   if (tab === 'faq') return r === 'communication';
-  if (tab === 'sponsors') return r === 'sponsor';
+  if (tab === 'annuaire_sponsors') return r === 'sponsor';
+  if (tab === 'besoins_sponsors') return r === 'sponsor';
   if (tab === 'cagnotte') return r === 'tresorerie';
-  if (tab === 'programme') return isDirection.value;
   return false;
 };
 
 const currentTab = ref('poles');
-const currentSponsorSubTab = ref('annuaire'); // 'annuaire', 'besoins', 'partenaires'
 const showMobileMenu = ref(false);
 
 const selectAdminTab = (tab) => {
@@ -141,7 +143,7 @@ const currentTaskDetail = ref(null);
 const newStepTitle = ref('');
 const newComment = ref('');
 
-// ================= MATÉRIEL & ARBITRAGE ================= //
+// ================= MATÉRIEL, ARBITRAGE & FILTRES PAR COLONNE ================= //
 const materialRequests = ref([]);
 const showMaterialModal = ref(false);
 const materialForm = ref({
@@ -176,13 +178,130 @@ const decisionStatusList = [
   { id: 'refuse', label: 'Refusé', badge: 'bg-rose-100 text-rose-900 border-rose-200' }
 ];
 
-const filteredMaterialRequests = computed(() => {
-  if (isLogistiqueOrDirection.value) return materialRequests.value;
-  return materialRequests.value.filter(m => m.pole === currentRole.value);
+// Filtres par colonne — Tableau Logistique
+const matColFilters = ref({
+  pole: '',
+  article: '',
+  prix: '',
+  avis_logistique: '',
+  avis_tresorerie: '',
+  statut_sponsor: ''
 });
 
+const resetMatFilters = () => {
+  matColFilters.value = { pole: '', article: '', prix: '', avis_logistique: '', avis_tresorerie: '', statut_sponsor: '' };
+};
+
+const filteredMaterialRequests = computed(() => {
+  const base = isLogistiqueOrDirection.value
+    ? materialRequests.value
+    : materialRequests.value.filter(m => m.pole === currentRole.value);
+
+  const f = matColFilters.value;
+  return base.filter(item => {
+    if (f.pole && !(item.pole || '').toLowerCase().includes(f.pole.toLowerCase())) return false;
+    if (f.article) {
+      const q = f.article.toLowerCase();
+      const matchArt = (item.article || '').toLowerCase().includes(q) ||
+                       (item.details || '').toLowerCase().includes(q) ||
+                       (item.demandeur || '').toLowerCase().includes(q);
+      if (!matchArt) return false;
+    }
+    if (f.prix) {
+      const priceStr = item.statut_sponsor === 'sponsor_trouve' ? '0' : String(item.estimated_price ?? '');
+      if (!priceStr.includes(f.prix)) return false;
+    }
+    if (f.avis_logistique) {
+      const st = item.statut_sponsor === 'sponsor_trouve' ? 'sponsorise' : (item.avis_logistique || item.status || 'en_attente');
+      if (st !== f.avis_logistique) return false;
+    }
+    if (f.avis_tresorerie) {
+      const st = item.statut_sponsor === 'sponsor_trouve' ? 'sponsorise' : (item.avis_tresorerie || 'en_attente');
+      if (st !== f.avis_tresorerie) return false;
+    }
+    if (f.statut_sponsor) {
+      const st = item.demande_sponsor ? (item.statut_sponsor || 'en_attente') : 'non_delegue';
+      if (st !== f.statut_sponsor) return false;
+    }
+    return true;
+  });
+});
+
+// Filtres par colonne — Tableau Trésorerie
+const tresorColFilters = ref({
+  pole: '',
+  article: '',
+  prix: '',
+  avis_logistique: '',
+  avis_tresorerie: '',
+  statut_sponsor: ''
+});
+
+const resetTresorFilters = () => {
+  tresorColFilters.value = { pole: '', article: '', prix: '', avis_logistique: '', avis_tresorerie: '', statut_sponsor: '' };
+};
+
+const filteredTresorerieRequests = computed(() => {
+  const f = tresorColFilters.value;
+  return materialRequests.value.filter(item => {
+    if (f.pole && !(item.pole || '').toLowerCase().includes(f.pole.toLowerCase())) return false;
+    if (f.article) {
+      const q = f.article.toLowerCase();
+      const matchArt = (item.article || '').toLowerCase().includes(q) ||
+                       (item.details || '').toLowerCase().includes(q) ||
+                       (item.demandeur || '').toLowerCase().includes(q);
+      if (!matchArt) return false;
+    }
+    if (f.prix) {
+      const priceStr = item.statut_sponsor === 'sponsor_trouve' ? '0' : String(item.estimated_price ?? '');
+      if (!priceStr.includes(f.prix)) return false;
+    }
+    if (f.avis_logistique) {
+      const st = item.statut_sponsor === 'sponsor_trouve' ? 'sponsorise' : (item.avis_logistique || item.status || 'en_attente');
+      if (st !== f.avis_logistique) return false;
+    }
+    if (f.avis_tresorerie) {
+      const st = item.statut_sponsor === 'sponsor_trouve' ? 'sponsorise' : (item.avis_tresorerie || 'en_attente');
+      if (st !== f.avis_tresorerie) return false;
+    }
+    if (f.statut_sponsor) {
+      const st = item.demande_sponsor ? (item.statut_sponsor || 'en_attente') : 'non_delegue';
+      if (st !== f.statut_sponsor) return false;
+    }
+    return true;
+  });
+});
+
+// Besoins délégués aux sponsors + Filtres par colonne
 const sponsorMaterialRequests = computed(() => {
   return materialRequests.value.filter(m => m.demande_sponsor === true);
+});
+
+const sponsorReqColFilters = ref({
+  pole: '',
+  article: '',
+  details: '',
+  cout: '',
+  statut: ''
+});
+
+const resetSponsorReqFilters = () => {
+  sponsorReqColFilters.value = { pole: '', article: '', details: '', cout: '', statut: '' };
+};
+
+const filteredSponsorMaterialRequests = computed(() => {
+  const f = sponsorReqColFilters.value;
+  return sponsorMaterialRequests.value.filter(req => {
+    if (f.pole && !(req.pole || '').toLowerCase().includes(f.pole.toLowerCase())) return false;
+    if (f.article && !(req.article || '').toLowerCase().includes(f.article.toLowerCase())) return false;
+    if (f.details && !(req.details || '').toLowerCase().includes(f.details.toLowerCase())) return false;
+    if (f.cout) {
+      const total = req.estimated_price ? (req.estimated_price * req.quantite).toFixed(2) : '';
+      if (!total.includes(f.cout)) return false;
+    }
+    if (f.statut && req.statut_sponsor !== f.statut) return false;
+    return true;
+  });
 });
 
 const totalEstimatedBudget = computed(() => {
@@ -218,11 +337,10 @@ const budgetSummaryByPole = computed(() => {
   return Object.values(summary).filter(s => s.count > 0);
 });
 
-// ================= ANNUAIRE PROSPECTION SPONSORS ================= //
+// ================= ANNUAIRE PROSPECTION SPONSORS & FILTRES PAR COLONNE ================= //
 const sponsorProspects = ref([]);
 const showProspectModal = ref(false);
 const editingProspect = ref(null);
-const prospectFilter = ref('all');
 
 const prospectForm = ref({
   nom_entreprise: '',
@@ -244,9 +362,38 @@ const prospectStatusList = [
   { id: 'refuse', label: 'Refusé', badge: 'bg-rose-100 text-rose-900 border-rose-200' }
 ];
 
+const prospectColFilters = ref({
+  entreprise: '',
+  contact: '',
+  contact_asso: '',
+  coordonnees: '',
+  responsable: '',
+  statut: ''
+});
+
+const resetProspectFilters = () => {
+  prospectColFilters.value = { entreprise: '', contact: '', contact_asso: '', coordonnees: '', responsable: '', statut: '' };
+};
+
 const filteredProspects = computed(() => {
-  if (prospectFilter.value === 'all') return sponsorProspects.value;
-  return sponsorProspects.value.filter(p => p.statut === prospectFilter.value);
+  const f = prospectColFilters.value;
+  return sponsorProspects.value.filter(item => {
+    if (f.entreprise) {
+      const q = f.entreprise.toLowerCase();
+      if (!(item.nom_entreprise || '').toLowerCase().includes(q) &&
+          !(item.adresse_postale || '').toLowerCase().includes(q) &&
+          !(item.notes || '').toLowerCase().includes(q)) return false;
+    }
+    if (f.contact && !(item.nom_contact || '').toLowerCase().includes(f.contact.toLowerCase())) return false;
+    if (f.contact_asso && !(item.contact_asso || '').toLowerCase().includes(f.contact_asso.toLowerCase())) return false;
+    if (f.coordonnees) {
+      const q = f.coordonnees.toLowerCase();
+      if (!(item.telephone || '').toLowerCase().includes(q) && !(item.email || '').toLowerCase().includes(q)) return false;
+    }
+    if (f.responsable && !(item.responsable || '').toLowerCase().includes(f.responsable.toLowerCase())) return false;
+    if (f.statut && item.statut !== f.statut) return false;
+    return true;
+  });
 });
 
 // ================= MODALES FAQ & SPONSORS OFFICIELS ================= //
@@ -342,12 +489,16 @@ const fetchProfileAndData = async () => {
 const loadPermittedData = async () => {
   loadPoleData();
   fetchMaterialRequests();
-  fetchProgramAndSettings();
-  fetchVillageItems();
 
-  if (canAccessTab('sponsors')) {
-    const { data } = await supabase.from('sponsors').select('*').order('id', { ascending: true });
-    if (data) sponsors.value = data;
+  // Données exclusives Président / Vice-Présidente (Gestion Site)
+  if (isDirection.value) {
+    fetchProgramAndSettings();
+    fetchVillageItems();
+    const { data: spData } = await supabase.from('sponsors').select('*').order('id', { ascending: true });
+    if (spData) sponsors.value = spData;
+  }
+
+  if (canAccessTab('annuaire_sponsors') || canAccessTab('besoins_sponsors')) {
     fetchSponsorProspects();
   }
 
@@ -1008,7 +1159,7 @@ const exportToExcel = (type = 'logistique') => {
     filename = `budget_materiel_tresorerie_${new Date().toISOString().slice(0, 10)}.csv`;
     csvContent += 'Pôle;Article;Quantité;Prix Unitaire (€);Montant Total Estimé (€);Avis Trésorerie;Justification Trésorerie;Avis Logistique;Statut Sponsor;Demandeur;Date\n';
 
-    materialRequests.value.forEach(req => {
+    filteredTresorerieRequests.value.forEach(req => {
       const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
       const article = `"${(req.article || '').replace(/"/g, '""')}"`;
       const qte = req.quantite || 1;
@@ -1028,7 +1179,7 @@ const exportToExcel = (type = 'logistique') => {
     filename = `suivi_materiel_sponsoring_${new Date().toISOString().slice(0, 10)}.csv`;
     csvContent += 'Pôle Demandeur;Matériel;Quantité;Coût Indicatif Unitaire (€);Coût Total Économisé (€);Justification;Statut Sponsoring;Date Demande\n';
 
-    sponsorMaterialRequests.value.forEach(req => {
+    filteredSponsorMaterialRequests.value.forEach(req => {
       const pole = `"${(req.pole || '').replace(/"/g, '""')}"`;
       const article = `"${(req.article || '').replace(/"/g, '""')}"`;
       const qte = req.quantite || 1;
@@ -1185,7 +1336,7 @@ const handleSaveFundraising = async () => {
   if (!error) triggerToast('Cagnotte et inscrits mis à jour en direct !');
 };
 
-// ================= GESTION PROGRAMME & LIEN HELLOASSO (DIRECTION) ================= //
+// ================= GESTION PROGRAMME & LIEN HELLOASSO (GESTION SITE) ================= //
 const programItems = ref([]);
 const programPeriodFilter = ref('matin');
 const showProgramModal = ref(false);
@@ -1318,11 +1469,20 @@ const moveProgramItem = async (index, direction) => {
   triggerToast('Ordre du programme mis à jour !');
 };
 
-// ================= GESTION VILLAGE SOLIDAIRE (DIRECTION) ================= //
+// ================= GESTION VILLAGE SOLIDAIRE (GESTION SITE) ================= //
 const villageItems = ref([]);
 const showVillageModal = ref(false);
 const editingVillageItem = ref(null);
 const uploadingVillageImg = ref(false);
+
+const villageLayoutConfig = ref({
+  split: '50-50',
+  rightCols: '2',
+  spacing: 'normal',
+  gapSize: 'normal',
+  cardStyle: 'glass',
+  theme: 'dark'
+});
 
 const villageForm = ref({
   title: '',
@@ -1330,34 +1490,62 @@ const villageForm = ref({
   description: '',
   icon: 'fa-tent',
   image_url: '',
+  logo_fit: 'original',
+  logo_size: 'md',
+  logo_bg: 'white',
   color_theme: 'amber',
-  layout_zone: 'auto'
+  layout_zone: 'auto',
+  is_wide: false
 });
 
 const villageIconOptions = [
   { id: 'fa-tent', label: 'Stand / Village' },
   { id: 'fa-hand-holding-heart', label: 'Association / Solidarité' },
+  { id: 'fa-kit-medical', label: 'Poste de Secours' },
   { id: 'fa-mug-hot', label: 'Buvette / Café' },
   { id: 'fa-utensils', label: 'Restauration' },
   { id: 'fa-puzzle-piece', label: 'Atelier Mémoire / Jeux' },
   { id: 'fa-music', label: 'Animation Musicale' },
+  { id: 'fa-ticket', label: 'Tombola / Billetterie' },
+  { id: 'fa-camera', label: 'Photocall Souvenir' },
   { id: 'fa-medal', label: 'Podium / Récompenses' },
   { id: 'fa-child-reaching', label: 'Espace Enfants' }
 ];
 
 const fetchVillageItems = async () => {
-  const { data, error } = await supabase
-    .from('village_activities')
-    .select('*')
-    .order('sort_order', { ascending: true })
-    .order('id', { ascending: true });
+  const [{ data, error }, { data: cfgData }] = await Promise.all([
+    supabase
+      .from('village_activities')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('id', { ascending: true }),
+    supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'village_layout_config')
+      .maybeSingle()
+  ]);
 
-  if (error) {
-    console.error('Erreur chargement village:', error);
-    return;
-  }
-  if (data) {
+  if (!error && data) {
     villageItems.value = data;
+  }
+  if (cfgData?.value) {
+    try {
+      villageLayoutConfig.value = { ...villageLayoutConfig.value, ...JSON.parse(cfgData.value) };
+    } catch (e) {}
+  }
+};
+
+const saveVillageLayoutConfig = async () => {
+  const { error } = await supabase
+    .from('site_settings')
+    .upsert({
+      key: 'village_layout_config',
+      value: JSON.stringify(villageLayoutConfig.value)
+    });
+
+  if (!error) {
+    triggerToast('Paramètres visuels du Village Solidaire enregistrés !');
   }
 };
 
@@ -1373,8 +1561,12 @@ const openCreateVillage = () => {
     description: '',
     icon: 'fa-tent',
     image_url: '',
+    logo_fit: 'original',
+    logo_size: 'md',
+    logo_bg: 'white',
     color_theme: 'amber',
-    layout_zone: 'auto'
+    layout_zone: 'auto',
+    is_wide: false
   };
   showVillageModal.value = true;
 };
@@ -1387,8 +1579,12 @@ const openEditVillage = (item) => {
     description: item.description || '',
     icon: item.icon || 'fa-tent',
     image_url: item.image_url || '',
+    logo_fit: item.logo_fit || 'original',
+    logo_size: item.logo_size || 'md',
+    logo_bg: item.logo_bg || 'white',
     color_theme: item.color_theme || 'amber',
-    layout_zone: item.layout_zone || 'auto'
+    layout_zone: item.layout_zone || 'auto',
+    is_wide: Boolean(item.is_wide)
   };
   showVillageModal.value = true;
 };
@@ -1413,7 +1609,7 @@ const handleVillageImageUpload = async (event) => {
       .getPublicUrl(fileName);
 
     villageForm.value.image_url = publicUrlData.publicUrl;
-    triggerToast('Image importée avec succès !');
+    triggerToast('Logo / image importé !');
   } catch (err) {
     console.error('Erreur upload image:', err);
     triggerToast("Impossible d'importer le fichier (vérifiez le bucket 'village-icons' ou collez une URL).");
@@ -1434,8 +1630,12 @@ const saveVillageItem = async () => {
     description: villageForm.value.description?.trim() || null,
     icon: villageForm.value.icon || 'fa-tent',
     image_url: villageForm.value.image_url?.trim() || null,
+    logo_fit: villageForm.value.logo_fit || 'original',
+    logo_size: villageForm.value.logo_size || 'md',
+    logo_bg: villageForm.value.logo_bg || 'white',
     color_theme: villageForm.value.color_theme || 'amber',
-    layout_zone: villageForm.value.layout_zone || 'auto'
+    layout_zone: villageForm.value.layout_zone || 'auto',
+    is_wide: Boolean(villageForm.value.is_wide)
   };
 
   if (editingVillageItem.value) {
@@ -1446,7 +1646,6 @@ const saveVillageItem = async () => {
       .select();
 
     if (error) {
-      console.error('Erreur update village:', error);
       triggerToast(`Erreur : ${error.message}`);
       return;
     }
@@ -1464,7 +1663,6 @@ const saveVillageItem = async () => {
       .select();
 
     if (error) {
-      console.error('Erreur insert village:', error);
       triggerToast(`Erreur lors de l'enregistrement : ${error.message}`);
       return;
     }
@@ -1512,6 +1710,7 @@ onMounted(async () => {
   }
 });
 </script>
+
 
 <template>
   <div v-if="authLoading" class="min-h-screen flex items-center justify-center bg-slate-100">
@@ -1608,7 +1807,7 @@ onMounted(async () => {
 
       <!-- BARRE D'ONGLETS CLASSIQUE SUR ORDINATEUR UNIQUEMENT (hidden md:block) -->
       <nav class="hidden md:block border-b border-slate-300/80 mb-8 overflow-hidden">
-        <div class="flex items-center gap-7 -mb-px flex-wrap">
+        <div class="flex items-center gap-6 -mb-px flex-wrap">
           <button
             v-if="canAccessTab('poles')"
             @click="currentTab = 'poles'"
@@ -1637,6 +1836,27 @@ onMounted(async () => {
           >
             <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
             <span>Budget & Pôles</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('annuaire_sponsors')"
+            @click="currentTab = 'annuaire_sponsors'"
+            :class="currentTab === 'annuaire_sponsors' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
+          >
+            <i class="fa-solid fa-address-book text-xs"></i>
+            <span>Annuaire Sponsors ({{ sponsorProspects.length }})</span>
+          </button>
+
+          <button
+            v-if="canAccessTab('besoins_sponsors')"
+            @click="currentTab = 'besoins_sponsors'"
+            :class="currentTab === 'besoins_sponsors' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
+          >
+            <i class="fa-solid fa-handshake text-xs"></i>
+            <span>Besoins à sponsoriser ({{ sponsorMaterialRequests.length }})</span>
+            <span v-if="sponsorMaterialRequests.filter(s => s.statut_sponsor === 'en_attente').length > 0" class="w-2 h-2 rounded-full bg-amber-500"></span>
           </button>
 
           <button
@@ -1670,17 +1890,6 @@ onMounted(async () => {
           </button>
 
           <button
-            v-if="canAccessTab('sponsors')"
-            @click="currentTab = 'sponsors'"
-            :class="currentTab === 'sponsors' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-            class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
-          >
-            <i class="fa-solid fa-handshake text-xs"></i>
-            <span>Pôle Sponsors</span>
-            <span v-if="sponsorMaterialRequests.filter(s => s.statut_sponsor === 'en_attente').length > 0" class="w-2 h-2 rounded-full bg-amber-500"></span>
-          </button>
-
-          <button
             v-if="canAccessTab('cagnotte')"
             @click="currentTab = 'cagnotte'"
             :class="currentTab === 'cagnotte' ? 'text-emerald-700 border-b-2 border-emerald-600 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
@@ -1690,15 +1899,15 @@ onMounted(async () => {
             <span>Actualiser Cagnotte</span>
           </button>
 
-          <!-- ONGLET EXCLUSIF DIRECTION / VICE-PRÉSIDENTE -->
+          <!-- ONGLET EXCLUSIF PRÉSIDENT / VICE-PRÉSIDENTE : GESTION SITE -->
           <button
-            v-if="isDirection"
-            @click="currentTab = 'programme'"
-            :class="currentTab === 'programme' ? 'text-amber-700 border-b-2 border-amber-500 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
+            v-if="canAccessTab('gestion_site')"
+            @click="currentTab = 'gestion_site'"
+            :class="currentTab === 'gestion_site' ? 'text-amber-700 border-b-2 border-amber-500 font-extrabold' : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
             class="pb-3.5 text-sm transition-all cursor-pointer flex items-center gap-2 select-none"
           >
-            <i class="fa-solid fa-clock text-xs text-amber-500"></i>
-            <span>Programme, Village & HelloAsso</span>
+            <i class="fa-solid fa-sliders text-xs text-amber-500"></i>
+            <span>Gestion Site</span>
           </button>
         </div>
       </nav>
@@ -1754,16 +1963,33 @@ onMounted(async () => {
               </button>
 
               <button
-                v-if="canAccessTab('sponsors')"
-                @click="selectAdminTab('sponsors')"
-                :class="currentTab === 'sponsors' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                v-if="canAccessTab('annuaire_sponsors')"
+                @click="selectAdminTab('annuaire_sponsors')"
+                :class="currentTab === 'annuaire_sponsors' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
+                class="w-full px-4 py-3 rounded-xl text-xs flex items-center justify-between transition cursor-pointer text-left"
+              >
+                <span class="flex items-center gap-3">
+                  <i class="fa-solid fa-address-book w-4 text-center"></i>
+                  <span>Annuaire Sponsors</span>
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono" :class="currentTab === 'annuaire_sponsors' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+                  {{ sponsorProspects.length }}
+                </span>
+              </button>
+
+              <button
+                v-if="canAccessTab('besoins_sponsors')"
+                @click="selectAdminTab('besoins_sponsors')"
+                :class="currentTab === 'besoins_sponsors' ? 'bg-emerald-700 text-white font-bold shadow-xs' : 'text-slate-700 hover:bg-slate-100 font-medium'"
                 class="w-full px-4 py-3 rounded-xl text-xs flex items-center justify-between transition cursor-pointer text-left"
               >
                 <span class="flex items-center gap-3">
                   <i class="fa-solid fa-handshake w-4 text-center"></i>
-                  <span>Pôle Sponsors</span>
+                  <span>Besoins à sponsoriser</span>
                 </span>
-                <span v-if="sponsorMaterialRequests.filter(s => s.statut_sponsor === 'en_attente').length > 0" class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono" :class="currentTab === 'besoins_sponsors' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+                  {{ sponsorMaterialRequests.length }}
+                </span>
               </button>
 
               <button
@@ -1816,15 +2042,15 @@ onMounted(async () => {
                 <span>Actualiser Cagnotte</span>
               </button>
 
-              <!-- ONGLET EXCLUSIF DIRECTION / VICE-PRÉSIDENTE -->
+              <!-- ONGLET EXCLUSIF PRÉSIDENT / VICE-PRÉSIDENTE : GESTION SITE -->
               <button
-                v-if="isDirection"
-                @click="selectAdminTab('programme')"
-                :class="currentTab === 'programme' ? 'bg-amber-600 text-white font-bold shadow-xs' : 'text-amber-900 bg-amber-50/70 hover:bg-amber-100 font-bold'"
+                v-if="canAccessTab('gestion_site')"
+                @click="selectAdminTab('gestion_site')"
+                :class="currentTab === 'gestion_site' ? 'bg-amber-600 text-white font-bold shadow-xs' : 'text-amber-900 bg-amber-50/70 hover:bg-amber-100 font-bold'"
                 class="w-full px-4 py-3 rounded-xl text-xs flex items-center gap-3 transition cursor-pointer text-left mt-3 border border-amber-200"
               >
-                <i class="fa-solid fa-clock w-4 text-center"></i>
-                <span>Programme, Village & HelloAsso</span>
+                <i class="fa-solid fa-sliders w-4 text-center"></i>
+                <span>Gestion Site</span>
               </button>
             </nav>
           </div>
@@ -1958,7 +2184,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ================= VUE BESOINS EN MATÉRIEL ================= -->
+      <!-- ================= VUE BESOINS EN MATÉRIEL (LOGISTIQUE) ================= -->
       <div v-if="currentTab === 'materiel' && canAccessTab('materiel')" class="space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -1967,7 +2193,7 @@ onMounted(async () => {
               <span>{{ isLogistiqueOrDirection ? 'Tableau Central du Matériel (Pôle Logistique)' : 'Besoins Matériel de votre Pôle' }}</span>
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              Consultez, modifiez vos demandes et suivez les arbitrages logistiques, financiers et sponsors.
+              Filtrez par colonne, modifiez vos demandes et suivez les arbitrages logistiques, financiers et sponsors.
             </p>
           </div>
 
@@ -1995,13 +2221,59 @@ onMounted(async () => {
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-4 w-28">Pôle</th>
-                  <th class="p-4">Commande & Détails (Obligatoire)</th>
-                  <th class="p-4 w-32">Prix indicatif</th>
-                  <th class="p-4 w-40">Avis Logistique</th>
-                  <th class="p-4 w-40">Avis Trésorerie</th>
-                  <th class="p-4 w-44">Sponsors</th>
-                  <th class="p-4 text-right w-24">Actions</th>
+                  <th class="p-3 w-32">
+                    <div class="mb-1.5">Pôle</div>
+                    <select v-model="matColFilters.pole" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option v-for="p in allPoles" :key="p.id" :value="p.id">{{ p.label }}</option>
+                    </select>
+                  </th>
+                  <th class="p-3">
+                    <div class="mb-1.5">Commande & Détails</div>
+                    <input v-model="matColFilters.article" type="text" placeholder="Rechercher article, justification..." class="w-full px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                  </th>
+                  <th class="p-3 w-32">
+                    <div class="mb-1.5">Prix indicatif</div>
+                    <input v-model="matColFilters.prix" type="text" placeholder="Montant..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                  </th>
+                  <th class="p-3 w-40">
+                    <div class="mb-1.5">Avis Logistique</div>
+                    <select v-model="matColFilters.avis_logistique" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option value="en_attente">En attente</option>
+                      <option value="valide">Validé</option>
+                      <option value="refuse">Refusé</option>
+                      <option value="sponsorise">Sponsorisé</option>
+                    </select>
+                  </th>
+                  <th class="p-3 w-40">
+                    <div class="mb-1.5">Avis Trésorerie</div>
+                    <select v-model="matColFilters.avis_tresorerie" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option value="en_attente">En attente</option>
+                      <option value="valide">Validé</option>
+                      <option value="refuse">Refusé</option>
+                      <option value="sponsorise">Sponsorisé</option>
+                    </select>
+                  </th>
+                  <th class="p-3 w-44">
+                    <div class="mb-1.5">Sponsors</div>
+                    <select v-model="matColFilters.statut_sponsor" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option value="non_delegue">Non délégué</option>
+                      <option value="en_attente">En attente</option>
+                      <option value="en_recherche">En recherche</option>
+                      <option value="sponsor_trouve">Sponsor trouvé</option>
+                      <option value="non_finance">Non sponsorisé</option>
+                      <option value="refuse">Refusé</option>
+                    </select>
+                  </th>
+                  <th class="p-3 text-right w-24 align-top">
+                    <div class="mb-1.5">Actions</div>
+                    <button @click="resetMatFilters" class="text-[10px] font-bold text-emerald-700 hover:underline normal-case cursor-pointer" title="Réinitialiser les filtres">
+                      Réinitialiser
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
@@ -2047,6 +2319,7 @@ onMounted(async () => {
                     <span v-else class="text-slate-400 italic text-[11px]">Non renseigné</span>
                   </td>
 
+                  <!-- AVIS LOGISTIQUE -->
                   <td class="p-4 align-top">
                     <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
@@ -2070,6 +2343,7 @@ onMounted(async () => {
                     </div>
                   </td>
 
+                  <!-- AVIS TRÉSORERIE -->
                   <td class="p-4 align-top">
                     <div v-if="item.statut_sponsor === 'sponsor_trouve'" class="text-emerald-700 font-bold text-xs flex items-center gap-1.5">
                       <i class="fa-solid fa-circle-check"></i>
@@ -2086,6 +2360,7 @@ onMounted(async () => {
                     </div>
                   </td>
 
+                  <!-- STATUT SPONSOR -->
                   <td class="p-4 align-top">
                     <div v-if="item.demande_sponsor">
                       <span v-if="item.statut_sponsor === 'sponsor_trouve'" class="px-2.5 py-1 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
@@ -2098,7 +2373,7 @@ onMounted(async () => {
                         <span>Recherche en cours</span>
                       </span>
 
-                      <span v-else-if="item.statut_sponsor === 'non_finance'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1" title="Aucun sponsor trouvé, achat sur fonds associatifs requis">
+                      <span v-else-if="item.statut_sponsor === 'non_finance'" class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1">
                         <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
                         <span>Non sponsorisé</span>
                       </span>
@@ -2148,244 +2423,13 @@ onMounted(async () => {
 
                 <tr v-if="filteredMaterialRequests.length === 0">
                   <td colspan="7" class="p-10 text-center text-slate-400 italic text-xs">
-                    Aucune demande de matériel enregistrée pour le moment.
+                    Aucune demande de matériel ne correspond aux filtres sélectionnés.
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
-      </div>
-
-      <!-- ================= VUE PROGRAMME, VILLAGE & LIEN HELLOASSO (DIRECTION / VICE-PRÉSIDENTE) ================= -->
-      <div v-if="currentTab === 'programme' && isDirection" class="space-y-8">
-        
-        <!-- Bloc 1 : Lien HelloAsso -->
-        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-          <h3 class="text-base font-black text-slate-900 flex items-center gap-2 mb-1">
-            <i class="fa-solid fa-link text-emerald-600"></i>
-            <span>Lien d'inscription HelloAsso</span>
-          </h3>
-          <p class="text-xs text-slate-500 mb-4">Ce lien est utilisé par les boutons « S'inscrire » de la section Épreuves.</p>
-
-          <div class="flex flex-col sm:flex-row gap-3">
-            <input
-              v-model="helloAssoSetting"
-              type="url"
-              placeholder="https://www.helloasso.com/..."
-              class="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-mono outline-none focus:border-emerald-600"
-            />
-            <button
-              @click="saveHelloAssoUrl"
-              class="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-            >
-              Enregistrer le lien
-            </button>
-          </div>
-        </div>
-
-        <!-- Bloc 2 : Organisation des horaires et de l'ordre du programme -->
-        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
-          <div class="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
-                <i class="fa-solid fa-calendar-day text-amber-500"></i>
-                <span>Organisation du Programme de la Journée</span>
-              </h3>
-              <p class="text-xs text-slate-500 mt-0.5">
-                Modifiez les horaires, les intitulés et réorganisez l'ordre d'apparition sur le site.
-              </p>
-            </div>
-
-            <div class="flex items-center gap-3 flex-wrap">
-              <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200">
-                <button
-                  @click="programPeriodFilter = 'matin'"
-                  :class="programPeriodFilter === 'matin' ? 'bg-white text-emerald-700 font-bold shadow-2xs' : 'text-slate-600'"
-                  class="px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer"
-                >
-                  Matinée
-                </button>
-                <button
-                  @click="programPeriodFilter = 'aprem'"
-                  :class="programPeriodFilter === 'aprem' ? 'bg-white text-emerald-700 font-bold shadow-2xs' : 'text-slate-600'"
-                  class="px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer"
-                >
-                  Après-midi
-                </button>
-              </div>
-
-              <button
-                @click="openCreateProgram"
-                class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
-              >
-                <i class="fa-solid fa-plus"></i>
-                <span>Ajouter un moment</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="space-y-2.5">
-            <div
-              v-for="(item, index) in filteredProgramItems"
-              :key="item.id"
-              class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:bg-white transition"
-            >
-              <div class="flex items-center gap-3 sm:gap-4">
-                <div class="flex flex-col gap-1">
-                  <button
-                    @click="moveProgramItem(index, -1)"
-                    :disabled="index === 0"
-                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
-                    title="Monter"
-                  >
-                    <i class="fa-solid fa-chevron-up"></i>
-                  </button>
-                  <button
-                    @click="moveProgramItem(index, 1)"
-                    :disabled="index === filteredProgramItems.length - 1"
-                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
-                    title="Descendre"
-                  >
-                    <i class="fa-solid fa-chevron-down"></i>
-                  </button>
-                </div>
-
-                <span class="font-mono font-black text-xs text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg w-20 sm:w-24 text-center flex-shrink-0">
-                  {{ item.time_label }}
-                </span>
-
-                <div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span v-if="item.tag" class="text-[10px] uppercase font-bold bg-slate-700 text-white px-2 py-0.5 rounded">
-                      {{ item.tag }}
-                    </span>
-                    <h4 class="font-bold text-slate-900 text-sm">{{ item.title }}</h4>
-                  </div>
-                  <p v-if="item.description" class="text-xs text-slate-500 mt-0.5">{{ item.description }}</p>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-1.5 flex-shrink-0">
-                <button
-                  @click="openEditProgram(item)"
-                  class="p-2 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 cursor-pointer"
-                  title="Modifier"
-                >
-                  <i class="fa-solid fa-pen text-xs"></i>
-                </button>
-                <button
-                  @click="deleteProgramItem(item.id)"
-                  class="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
-                  title="Supprimer"
-                >
-                  <i class="fa-solid fa-trash text-xs"></i>
-                </button>
-              </div>
-            </div>
-
-            <div v-if="filteredProgramItems.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
-              Aucun créneau enregistré dans la base pour cette période (les horaires par défaut s'affichent sur le site).
-            </div>
-          </div>
-        </div>
-
-        <!-- Bloc 3 : Organisation du Village Solidaire -->
-        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
-          <div class="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
-                <i class="fa-solid fa-tent text-emerald-600"></i>
-                <span>Organisation du Village Solidaire ({{ sortedVillageItems.length }})</span>
-              </h3>
-              <p class="text-xs text-slate-500 mt-0.5">
-                Ajoutez des images/icônes, choisissez l'emplacement (Gauche ou Grille Droite) et réordonnez les éléments.
-              </p>
-            </div>
-
-            <button
-              @click="openCreateVillage"
-              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
-            >
-              <i class="fa-solid fa-plus"></i>
-              <span>Ajouter un stand / activité</span>
-            </button>
-          </div>
-
-          <div class="space-y-2.5">
-            <div
-              v-for="(item, index) in sortedVillageItems"
-              :key="item.id"
-              class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:bg-white transition"
-            >
-              <div class="flex items-center gap-3 sm:gap-4">
-                <div class="flex flex-col gap-1">
-                  <button
-                    @click="moveVillageItem(index, -1)"
-                    :disabled="index === 0"
-                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
-                    title="Monter"
-                  >
-                    <i class="fa-solid fa-chevron-up"></i>
-                  </button>
-                  <button
-                    @click="moveVillageItem(index, 1)"
-                    :disabled="index === sortedVillageItems.length - 1"
-                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
-                    title="Descendre"
-                  >
-                    <i class="fa-solid fa-chevron-down"></i>
-                  </button>
-                </div>
-
-                <!-- Aperçu Image ou Icône -->
-                <div class="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-emerald-200">
-                  <img v-if="item.image_url" :src="item.image_url" :alt="item.title" class="w-full h-full object-cover" />
-                  <i v-else :class="['fa-solid', item.icon || 'fa-tent']"></i>
-                </div>
-
-                <div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <h4 class="font-bold text-slate-900 text-sm">{{ item.title }}</h4>
-                    <span
-                      class="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded border"
-                      :class="item.layout_zone === 'left'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : item.layout_zone === 'right'
-                          ? 'bg-sky-50 text-sky-800 border-sky-200'
-                          : 'bg-slate-200 text-slate-700 border-slate-300'"
-                    >
-                      {{ item.layout_zone === 'left' ? 'Bandeau Gauche' : item.layout_zone === 'right' ? 'Grille Droite' : 'Auto' }}
-                    </span>
-                  </div>
-                  <p v-if="item.description" class="text-xs text-slate-500 mt-0.5 line-clamp-2">{{ item.description }}</p>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-1.5 flex-shrink-0">
-                <button
-                  @click="openEditVillage(item)"
-                  class="p-2 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 cursor-pointer"
-                  title="Modifier"
-                >
-                  <i class="fa-solid fa-pen text-xs"></i>
-                </button>
-                <button
-                  @click="deleteVillageItem(item.id)"
-                  class="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
-                  title="Supprimer"
-                >
-                  <i class="fa-solid fa-trash text-xs"></i>
-                </button>
-              </div>
-            </div>
-
-            <div v-if="sortedVillageItems.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
-              Aucun stand enregistré en base (les éléments par défaut s'affichent sur le site).
-            </div>
-          </div>
-        </div>
-
       </div>
 
       <!-- ================= VUE BUDGET & TRÉSORERIE PAR PÔLE ================= -->
@@ -2397,7 +2441,7 @@ onMounted(async () => {
               <span>Budget Matériel & Arbitrage Trésorerie</span>
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              Consultez, modifiez les montants et arbitrez les dépenses demandées. Les matériels sponsorisés sont automatiquement exclus du coût.
+              Filtrez par colonne et arbitrez les dépenses demandées. Les matériels sponsorisés sont automatiquement exclus du coût.
             </p>
           </div>
 
@@ -2438,25 +2482,71 @@ onMounted(async () => {
         </div>
 
         <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Demandes de dépenses et arbitrage financier</span>
+          <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center flex-wrap gap-2">
+            <span class="font-bold text-xs text-slate-700 uppercase tracking-wider">Demandes de dépenses et arbitrage financier ({{ filteredTresorerieRequests.length }})</span>
             <span class="text-xs font-semibold text-slate-500">Total estimé à payer : <strong class="text-emerald-700 font-mono">{{ totalEstimatedBudget.toFixed(2) }} €</strong></span>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-4 w-28">Pôle</th>
-                  <th class="p-4">Commande & Détails (Obligatoire)</th>
-                  <th class="p-4 w-32">Prix indicatif</th>
-                  <th class="p-4 w-40">Avis Logistique</th>
-                  <th class="p-4 w-40">Avis Trésorerie</th>
-                  <th class="p-4 w-44">Sponsors</th>
-                  <th class="p-4 text-right w-24">Actions</th>
+                  <th class="p-3 w-32">
+                    <div class="mb-1.5">Pôle</div>
+                    <select v-model="tresorColFilters.pole" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option v-for="p in allPoles" :key="p.id" :value="p.id">{{ p.label }}</option>
+                    </select>
+                  </th>
+                  <th class="p-3">
+                    <div class="mb-1.5">Commande & Détails</div>
+                    <input v-model="tresorColFilters.article" type="text" placeholder="Rechercher article, justification..." class="w-full px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                  </th>
+                  <th class="p-3 w-32">
+                    <div class="mb-1.5">Prix indicatif</div>
+                    <input v-model="tresorColFilters.prix" type="text" placeholder="Montant..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                  </th>
+                  <th class="p-3 w-40">
+                    <div class="mb-1.5">Avis Logistique</div>
+                    <select v-model="tresorColFilters.avis_logistique" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option value="en_attente">En attente</option>
+                      <option value="valide">Validé</option>
+                      <option value="refuse">Refusé</option>
+                      <option value="sponsorise">Sponsorisé</option>
+                    </select>
+                  </th>
+                  <th class="p-3 w-40">
+                    <div class="mb-1.5">Avis Trésorerie</div>
+                    <select v-model="tresorColFilters.avis_tresorerie" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option value="en_attente">En attente</option>
+                      <option value="valide">Validé</option>
+                      <option value="refuse">Refusé</option>
+                      <option value="sponsorise">Sponsorisé</option>
+                    </select>
+                  </th>
+                  <th class="p-3 w-44">
+                    <div class="mb-1.5">Sponsors</div>
+                    <select v-model="tresorColFilters.statut_sponsor" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                      <option value="">Tous</option>
+                      <option value="non_delegue">Non délégué</option>
+                      <option value="en_attente">En attente</option>
+                      <option value="en_recherche">En recherche</option>
+                      <option value="sponsor_trouve">Sponsor trouvé</option>
+                      <option value="non_finance">Non sponsorisé</option>
+                      <option value="refuse">Refusé</option>
+                    </select>
+                  </th>
+                  <th class="p-3 text-right w-24 align-top">
+                    <div class="mb-1.5">Actions</div>
+                    <button @click="resetTresorFilters" class="text-[10px] font-bold text-emerald-700 hover:underline normal-case cursor-pointer">
+                      Réinitialiser
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
-                <tr v-for="item in materialRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
+                <tr v-for="item in filteredTresorerieRequests" :key="item.id" class="hover:bg-slate-50/70 transition">
                   <td class="p-4 whitespace-nowrap align-top">
                     <span class="inline-block px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                       {{ item.pole }}
@@ -2593,344 +2683,644 @@ onMounted(async () => {
                     </div>
                   </td>
                 </tr>
+
+                <tr v-if="filteredTresorerieRequests.length === 0">
+                  <td colspan="7" class="p-10 text-center text-slate-400 italic text-xs">
+                    Aucune ligne ne correspond aux filtres sélectionnés.
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ================= VUE SPONSORS (3 SOUS-ONGLETS) ================= -->
-      <div v-if="currentTab === 'sponsors' && canAccessTab('sponsors')" class="space-y-6">
-        
-        <div class="border-b border-slate-200 overflow-hidden">
-          <div class="flex items-center gap-6 -mb-px flex-wrap">
-            <button
-              @click="currentSponsorSubTab = 'annuaire'"
-              :class="currentSponsorSubTab === 'annuaire'
-                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
-            >
-              <i class="fa-solid fa-address-book"></i>
-              <span>Annuaire Prospection ({{ sponsorProspects.length }})</span>
-            </button>
+      <!-- ================= VUE ANNUAIRE PROSPECTION SPONSORS (ONGLET PRINCIPAL) ================= -->
+      <div v-if="currentTab === 'annuaire_sponsors' && canAccessTab('annuaire_sponsors')" class="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-address-book text-emerald-600"></i>
+              <span>Annuaire Prospection Entreprises ({{ filteredProspects.length }})</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Suivi des démarches, contacts de l'association et statut des négociations.
+            </p>
+          </div>
 
+          <div class="flex items-center gap-2.5 flex-wrap">
             <button
-              @click="currentSponsorSubTab = 'besoins'"
-              :class="currentSponsorSubTab === 'besoins'
-                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
+              @click="resetProspectFilters"
+              class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
-              <i class="fa-solid fa-boxes-packing"></i>
-              <span>Besoins à faire sponsoriser</span>
-              <span v-if="sponsorMaterialRequests.length > 0" class="px-1.5 py-0.2 rounded-full text-[10px]" :class="currentSponsorSubTab === 'besoins' ? 'bg-emerald-100 text-emerald-800 font-mono font-bold' : 'bg-slate-200 text-slate-600 font-mono'">
-                {{ sponsorMaterialRequests.length }}
-              </span>
+              Réinitialiser les filtres
             </button>
-
-            <button
-              @click="currentSponsorSubTab = 'partenaires'"
-              :class="currentSponsorSubTab === 'partenaires'
-                ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800 border-b-2 border-transparent font-medium'"
-              class="pb-3 text-xs flex items-center gap-2 transition cursor-pointer select-none"
+            <button 
+              @click="openCreateProspect" 
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
             >
-              <i class="fa-solid fa-globe"></i>
-              <span>Partenaires du site ({{ sponsors.length }})</span>
+              <i class="fa-solid fa-plus"></i>
+              <span>Ajouter une entreprise</span>
             </button>
           </div>
         </div>
 
-        <!-- 1. ANNUAIRE PROSPECTION -->
-        <div v-if="currentSponsorSubTab === 'annuaire'" class="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                <th class="p-3">
+                  <div class="mb-1.5">Entreprise & Adresse</div>
+                  <input v-model="prospectColFilters.entreprise" type="text" placeholder="Nom, ville, note..." class="w-full px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3">
+                  <div class="mb-1.5">Interlocuteur</div>
+                  <input v-model="prospectColFilters.contact" type="text" placeholder="Filtrer nom..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3">
+                  <div class="mb-1.5">Contact Asso</div>
+                  <input v-model="prospectColFilters.contact_asso" type="text" placeholder="Membre asso..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3">
+                  <div class="mb-1.5">Coordonnées</div>
+                  <input v-model="prospectColFilters.coordonnees" type="text" placeholder="Tél ou email..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3">
+                  <div class="mb-1.5">Responsable</div>
+                  <input v-model="prospectColFilters.responsable" type="text" placeholder="Qui contacte..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3 w-36">
+                  <div class="mb-1.5">Statut</div>
+                  <select v-model="prospectColFilters.statut" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                    <option value="">Tous</option>
+                    <option v-for="st in prospectStatusList" :key="st.id" :value="st.id">{{ st.label }}</option>
+                  </select>
+                </th>
+                <th class="p-3 text-right w-20 align-top">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="item in filteredProspects" :key="item.id" class="hover:bg-slate-50/70 transition">
+                <td class="p-3.5 align-top">
+                  <div class="font-extrabold text-slate-900 text-sm">{{ item.nom_entreprise }}</div>
+                  <div v-if="item.adresse_postale" class="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5 max-w-xs">
+                    <i class="fa-solid fa-location-dot text-slate-400 mt-0.5 text-[10px]"></i>
+                    <span>{{ item.adresse_postale }}</span>
+                  </div>
+                  <p v-if="item.notes" class="text-[10px] text-slate-500 italic mt-1 bg-slate-50 p-1.5 rounded border border-slate-200/50">
+                    Note : {{ item.notes }}
+                  </p>
+                </td>
+
+                <td class="p-3.5 align-top">
+                  <span v-if="item.nom_contact" class="font-bold text-slate-800">{{ item.nom_contact }}</span>
+                  <span v-else class="text-slate-400 italic">Non spécifié</span>
+                </td>
+
+                <td class="p-3.5 align-top">
+                  <span v-if="item.contact_asso" class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[10px] inline-flex items-center gap-1">
+                    <i class="fa-solid fa-user-tag text-[9px]"></i>
+                    {{ item.contact_asso }}
+                  </span>
+                  <span v-else class="text-slate-400 italic">Aucun</span>
+                </td>
+
+                <td class="p-3.5 align-top space-y-1">
+                  <div v-if="item.telephone">
+                    <a :href="`tel:${item.telephone}`" class="text-slate-700 hover:text-emerald-700 font-medium flex items-center gap-1.5">
+                      <i class="fa-solid fa-phone text-[10px] text-slate-400"></i>
+                      <span>{{ item.telephone }}</span>
+                    </a>
+                  </div>
+                  <div v-if="item.email">
+                    <a :href="`mailto:${item.email}`" class="text-emerald-700 hover:underline font-medium flex items-center gap-1.5">
+                      <i class="fa-regular fa-envelope text-[10px]"></i>
+                      <span class="truncate max-w-[160px]">{{ item.email }}</span>
+                    </a>
+                  </div>
+                  <div v-if="!item.telephone && !item.email" class="text-slate-400 italic">Non renseigné</div>
+                </td>
+
+                <td class="p-3.5 align-top">
+                  <span v-if="item.responsable" class="font-semibold text-slate-800 text-[11px] bg-slate-100 px-2 py-0.5 rounded">
+                    {{ item.responsable }}
+                  </span>
+                  <span v-else class="text-slate-400 italic">Non assigné</span>
+                </td>
+
+                <td class="p-3.5 align-top whitespace-nowrap">
+                  <span :class="[prospectStatusList.find(s => s.id === item.statut)?.badge, 'px-2 py-0.5 rounded text-[10px] font-bold border inline-block']">
+                    {{ prospectStatusList.find(s => s.id === item.statut)?.label || item.statut }}
+                  </span>
+                </td>
+
+                <td class="p-3.5 text-right align-top whitespace-nowrap">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <button @click="openEditProspect(item)" class="text-slate-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer" title="Modifier">
+                      <i class="fa-solid fa-pen text-xs"></i>
+                    </button>
+                    <button @click="deleteProspect(item.id)" class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer" title="Supprimer">
+                      <i class="fa-solid fa-trash text-xs"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr v-if="filteredProspects.length === 0">
+                <td colspan="7" class="p-8 text-center text-slate-400 italic text-xs">
+                  Aucune entreprise ne correspond aux filtres sélectionnés.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ================= VUE BESOINS À SPONSORISER (ONGLET PRINCIPAL) ================= -->
+      <div v-if="currentTab === 'besoins_sponsors' && canAccessTab('besoins_sponsors')" class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-handshake text-emerald-600"></i>
+              <span>Besoins matériels à faire sponsoriser ({{ filteredSponsorMaterialRequests.length }})</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Acceptez la mission de prospection, puis confirmez dès qu'une entreprise finance le matériel.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <button
+              @click="resetSponsorReqFilters"
+              class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Réinitialiser les filtres
+            </button>
+
+            <button 
+              @click="exportToExcel('sponsor_besoins')" 
+              class="px-3.5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-2"
+            >
+              <i class="fa-solid fa-file-excel text-sm"></i>
+              <span>Exporter Suivi Sponsoring (.csv)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                <th class="p-3 w-32">
+                  <div class="mb-1.5">Pôle</div>
+                  <select v-model="sponsorReqColFilters.pole" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                    <option value="">Tous</option>
+                    <option v-for="p in allPoles" :key="p.id" :value="p.id">{{ p.label }}</option>
+                  </select>
+                </th>
+                <th class="p-3">
+                  <div class="mb-1.5">Matériel</div>
+                  <input v-model="sponsorReqColFilters.article" type="text" placeholder="Rechercher matériel..." class="w-full px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3">
+                  <div class="mb-1.5">Justification</div>
+                  <input v-model="sponsorReqColFilters.details" type="text" placeholder="Filtrer détails..." class="w-full px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3 w-32">
+                  <div class="mb-1.5">Coût estimé</div>
+                  <input v-model="sponsorReqColFilters.cout" type="text" placeholder="Montant..." class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-normal text-slate-700 normal-case" />
+                </th>
+                <th class="p-3 w-44">
+                  <div class="mb-1.5">Étape Sponsoring</div>
+                  <select v-model="sponsorReqColFilters.statut" class="w-full px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-medium text-slate-700 normal-case">
+                    <option value="">Toutes</option>
+                    <option value="en_attente">Nouveau besoin</option>
+                    <option value="en_recherche">Recherche en cours</option>
+                    <option value="sponsor_trouve">Sponsor trouvé</option>
+                    <option value="non_finance">Non sponsorisé</option>
+                    <option value="refuse">Refusé</option>
+                  </select>
+                </th>
+                <th class="p-3 text-right align-top">Actions Sponsors</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="req in filteredSponsorMaterialRequests" :key="req.id" class="hover:bg-slate-50/70 transition">
+                <td class="p-3 font-bold uppercase text-[11px] text-slate-700">{{ req.pole }}</td>
+                <td class="p-3 font-extrabold text-slate-900">
+                  {{ req.article }} <span class="text-slate-500 font-mono">(x{{ req.quantite }})</span>
+                </td>
+                <td class="p-3 text-slate-600 max-w-xs leading-relaxed">{{ req.details }}</td>
+                <td class="p-3 font-mono font-bold text-emerald-800">
+                  {{ req.estimated_price ? `${(req.estimated_price * req.quantite).toFixed(2)} €` : '—' }}
+                </td>
+
+                <td class="p-3">
+                  <span v-if="req.statut_sponsor === 'sponsor_trouve'" class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1">
+                    <i class="fa-solid fa-circle-check text-emerald-600"></i>
+                    <span>Sponsor trouvé (Validé)</span>
+                  </span>
+
+                  <span v-else-if="req.statut_sponsor === 'en_recherche'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                    <i class="fa-solid fa-magnifying-glass text-amber-600"></i>
+                    <span>Recherche en cours</span>
+                  </span>
+
+                  <span v-else-if="req.statut_sponsor === 'non_finance'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                    <span>Non sponsorisé</span>
+                  </span>
+
+                  <span v-else-if="req.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
+                    <i class="fa-solid fa-ban text-rose-500"></i>
+                    <span>Refusé</span>
+                  </span>
+
+                  <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                    Nouveau besoin
+                  </span>
+                </td>
+
+                <td class="p-3 text-right whitespace-nowrap">
+                  <div v-if="req.statut_sponsor === 'en_attente'" class="flex items-center justify-end gap-1.5">
+                    <button 
+                      @click="handleSponsorResponse(req, 'accepte_recherche')"
+                      class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                    >
+                      <i class="fa-solid fa-check"></i>
+                      <span>Chercher un sponsor</span>
+                    </button>
+                    <button 
+                      @click="handleSponsorResponse(req, 'refuse')"
+                      class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                    >
+                      <i class="fa-solid fa-xmark"></i>
+                      <span>Refuser</span>
+                    </button>
+                  </div>
+
+                  <div v-else-if="req.statut_sponsor === 'en_recherche'" class="flex items-center justify-end gap-1.5">
+                    <button 
+                      @click="handleSponsorResponse(req, 'trouve')"
+                      class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                    >
+                      <i class="fa-solid fa-award"></i>
+                      <span>Sponsor trouvé !</span>
+                    </button>
+                    <button 
+                      @click="handleSponsorResponse(req, 'abandon')"
+                      class="px-2 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                    >
+                      <span>Abandonner</span>
+                    </button>
+                  </div>
+
+                  <div v-else-if="req.statut_sponsor === 'sponsor_trouve'" class="flex items-center justify-end gap-2">
+                    <span class="text-[11px] font-black text-emerald-700">Validé</span>
+                    <button 
+                      @click="handleSponsorResponse(req, 'abandon')"
+                      class="text-[10px] text-slate-400 hover:text-rose-600 hover:underline cursor-pointer"
+                    >
+                      Désistement ?
+                    </button>
+                  </div>
+
+                  <div v-else class="flex items-center justify-end gap-1.5">
+                    <button 
+                      @click="handleSponsorResponse(req, 'accepte_recherche')"
+                      class="px-2 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition cursor-pointer"
+                    >
+                      Retenter la recherche
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr v-if="filteredSponsorMaterialRequests.length === 0">
+                <td colspan="6" class="p-10 text-center text-slate-400 italic text-xs">
+                  Aucun besoin matériel ne correspond aux filtres sélectionnés.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ================= VUE GESTION SITE (PRÉSIDENT / VICE-PRÉSIDENTE UNIQUEMENT) ================= -->
+      <div v-if="currentTab === 'gestion_site' && canAccessTab('gestion_site')" class="space-y-8">
+        
+        <!-- Bloc 1 : Lien HelloAsso -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+          <h3 class="text-base font-black text-slate-900 flex items-center gap-2 mb-1">
+            <i class="fa-solid fa-link text-emerald-600"></i>
+            <span>Lien d'inscription HelloAsso</span>
+          </h3>
+          <p class="text-xs text-slate-500 mb-4">Ce lien est utilisé par les boutons « S'inscrire » de la section Épreuves.</p>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <input
+              v-model="helloAssoSetting"
+              type="url"
+              placeholder="https://www.helloasso.com/..."
+              class="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-mono outline-none focus:border-emerald-600"
+            />
+            <button
+              @click="saveHelloAssoUrl"
+              class="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Enregistrer le lien
+            </button>
+          </div>
+        </div>
+
+        <!-- Bloc 2 : Organisation du Programme de la Journée -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
           <div class="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
-                <i class="fa-solid fa-address-book text-emerald-600"></i>
-                <span>Annuaire Prospection Entreprises</span>
+                <i class="fa-solid fa-calendar-day text-amber-500"></i>
+                <span>Organisation du Programme de la Journée</span>
               </h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                Suivi des démarches, contacts de l'association et statut des négociations.
+                Modifiez les horaires, les intitulés et réorganisez l'ordre d'apparition sur le site.
               </p>
             </div>
 
-            <div class="flex items-center gap-3">
-              <select 
-                v-model="prospectFilter" 
-                class="px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-600 bg-white cursor-pointer"
-              >
-                <option value="all">Toutes les entreprises ({{ sponsorProspects.length }})</option>
-                <option value="a_contacter">À contacter</option>
-                <option value="contacte">Contactées</option>
-                <option value="en_negociation">En négociation</option>
-                <option value="signe">Partenaires confirmés</option>
-                <option value="refuse">Refusées</option>
-              </select>
+            <div class="flex items-center gap-3 flex-wrap">
+              <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200">
+                <button
+                  @click="programPeriodFilter = 'matin'"
+                  :class="programPeriodFilter === 'matin' ? 'bg-white text-emerald-700 font-bold shadow-2xs' : 'text-slate-600'"
+                  class="px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer"
+                >
+                  Matinée
+                </button>
+                <button
+                  @click="programPeriodFilter = 'aprem'"
+                  :class="programPeriodFilter === 'aprem' ? 'bg-white text-emerald-700 font-bold shadow-2xs' : 'text-slate-600'"
+                  class="px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer"
+                >
+                  Après-midi
+                </button>
+              </div>
 
-              <button 
-                @click="openCreateProspect" 
-                class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2"
+              <button
+                @click="openCreateProgram"
+                class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
               >
                 <i class="fa-solid fa-plus"></i>
-                <span>Ajouter une entreprise</span>
+                <span>Ajouter un moment</span>
               </button>
             </div>
           </div>
 
-          <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-3.5">Entreprise & Adresse</th>
-                  <th class="p-3.5">Interlocuteur</th>
-                  <th class="p-3.5">Contact Asso / Entrée</th>
-                  <th class="p-3.5">Coordonnées</th>
-                  <th class="p-3.5">Responsable</th>
-                  <th class="p-3.5">Statut</th>
-                  <th class="p-3.5 text-right w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr v-for="item in filteredProspects" :key="item.id" class="hover:bg-slate-50/70 transition">
-                  <td class="p-3.5 align-top">
-                    <div class="font-extrabold text-slate-900 text-sm">{{ item.nom_entreprise }}</div>
-                    <div v-if="item.adresse_postale" class="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5 max-w-xs">
-                      <i class="fa-solid fa-location-dot text-slate-400 mt-0.5 text-[10px]"></i>
-                      <span>{{ item.adresse_postale }}</span>
-                    </div>
-                    <p v-if="item.notes" class="text-[10px] text-slate-500 italic mt-1 bg-slate-50 p-1.5 rounded border border-slate-200/50">
-                      Note : {{ item.notes }}
-                    </p>
-                  </td>
+          <div class="space-y-2.5">
+            <div
+              v-for="(item, index) in filteredProgramItems"
+              :key="item.id"
+              class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:bg-white transition"
+            >
+              <div class="flex items-center gap-3 sm:gap-4">
+                <div class="flex flex-col gap-1">
+                  <button
+                    @click="moveProgramItem(index, -1)"
+                    :disabled="index === 0"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Monter"
+                  >
+                    <i class="fa-solid fa-chevron-up"></i>
+                  </button>
+                  <button
+                    @click="moveProgramItem(index, 1)"
+                    :disabled="index === filteredProgramItems.length - 1"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Descendre"
+                  >
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </button>
+                </div>
 
-                  <td class="p-3.5 align-top">
-                    <span v-if="item.nom_contact" class="font-bold text-slate-800">
-                      {{ item.nom_contact }}
+                <span class="font-mono font-black text-xs text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg w-20 sm:w-24 text-center flex-shrink-0">
+                  {{ item.time_label }}
+                </span>
+
+                <div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span v-if="item.tag" class="text-[10px] uppercase font-bold bg-slate-700 text-white px-2 py-0.5 rounded">
+                      {{ item.tag }}
                     </span>
-                    <span v-else class="text-slate-400 italic">Non spécifié</span>
-                  </td>
+                    <h4 class="font-bold text-slate-900 text-sm">{{ item.title }}</h4>
+                  </div>
+                  <p v-if="item.description" class="text-xs text-slate-500 mt-0.5">{{ item.description }}</p>
+                </div>
+              </div>
 
-                  <td class="p-3.5 align-top">
-                    <span v-if="item.contact_asso" class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[10px] inline-flex items-center gap-1">
-                      <i class="fa-solid fa-user-tag text-[9px]"></i>
-                      {{ item.contact_asso }}
-                    </span>
-                    <span v-else class="text-slate-400 italic">Aucun</span>
-                  </td>
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  @click="openEditProgram(item)"
+                  class="p-2 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 cursor-pointer"
+                  title="Modifier"
+                >
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button
+                  @click="deleteProgramItem(item.id)"
+                  class="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                  title="Supprimer"
+                >
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
 
-                  <td class="p-3.5 align-top space-y-1">
-                    <div v-if="item.telephone">
-                      <a :href="`tel:${item.telephone}`" class="text-slate-700 hover:text-emerald-700 font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-phone text-[10px] text-slate-400"></i>
-                        <span>{{ item.telephone }}</span>
-                      </a>
-                    </div>
-                    <div v-if="item.email">
-                      <a :href="`mailto:${item.email}`" class="text-emerald-700 hover:underline font-medium flex items-center gap-1.5">
-                        <i class="fa-regular fa-envelope text-[10px]"></i>
-                        <span class="truncate max-w-[160px]">{{ item.email }}</span>
-                      </a>
-                    </div>
-                    <div v-if="!item.telephone && !item.email" class="text-slate-400 italic">
-                      Non renseigné
-                    </div>
-                  </td>
-
-                  <td class="p-3.5 align-top">
-                    <span v-if="item.responsable" class="font-semibold text-slate-800 text-[11px] bg-slate-100 px-2 py-0.5 rounded">
-                      {{ item.responsable }}
-                    </span>
-                    <span v-else class="text-slate-400 italic">Non assigné</span>
-                  </td>
-
-                  <td class="p-3.5 align-top whitespace-nowrap">
-                    <span :class="[prospectStatusList.find(s => s.id === item.statut)?.badge, 'px-2 py-0.5 rounded text-[10px] font-bold border inline-block']">
-                      {{ prospectStatusList.find(s => s.id === item.statut)?.label || item.statut }}
-                    </span>
-                  </td>
-
-                  <td class="p-3.5 text-right align-top whitespace-nowrap">
-                    <div class="flex items-center justify-end gap-1.5">
-                      <button 
-                        @click="openEditProspect(item)"
-                        class="text-slate-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
-                        title="Modifier"
-                      >
-                        <i class="fa-solid fa-pen text-xs"></i>
-                      </button>
-                      <button 
-                        @click="deleteProspect(item.id)" 
-                        class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
-                        title="Supprimer"
-                      >
-                        <i class="fa-solid fa-trash text-xs"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-
-                <tr v-if="filteredProspects.length === 0">
-                  <td colspan="7" class="p-8 text-center text-slate-400 italic text-xs">
-                    Aucune entreprise enregistrée pour ce filtre.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <div v-if="filteredProgramItems.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+              Aucun créneau enregistré dans la base pour cette période (les horaires par défaut s'affichent sur le site).
+            </div>
           </div>
         </div>
 
-        <!-- 2. BESOINS À FAIRE SPONSORISER -->
-        <div v-if="currentSponsorSubTab === 'besoins'" class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <!-- Bloc 3 : Organisation du Village Solidaire -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-6">
           <div class="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
-                <i class="fa-solid fa-boxes-packing text-emerald-600"></i>
-                <span>Besoins matériels délégués au pôle sponsors</span>
+                <i class="fa-solid fa-tent text-emerald-600"></i>
+                <span>Organisation du Village Solidaire ({{ sortedVillageItems.length }})</span>
               </h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                Acceptez la mission de prospection, puis confirmez dès qu'une entreprise finance le matériel.
+                Personnalisez la mise en page globale, ajoutez des logos en proportions réelles et réordonnez les stands.
               </p>
             </div>
 
-            <div class="flex items-center gap-3">
-              <button 
-                @click="exportToExcel('sponsor_besoins')" 
-                class="px-3.5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-2"
-              >
-                <i class="fa-solid fa-file-excel text-sm"></i>
-                <span>Exporter Suivi Sponsoring (.csv)</span>
-              </button>
+            <button
+              @click="openCreateVillage"
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-plus"></i>
+              <span>Ajouter un stand / activité</span>
+            </button>
+          </div>
 
-              <span class="px-3 py-1 bg-amber-100 text-amber-900 font-bold rounded-full text-xs">
-                {{ sponsorMaterialRequests.length }} demande(s)
+          <!-- PANNEAU DE CONTRÔLE DE L'ESPACE & DU VISUEL -->
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <i class="fa-solid fa-sliders text-emerald-600"></i>
+                <span>Paramètres d'espace & de mise en page</span>
               </span>
+              <button
+                @click="saveVillageLayoutConfig"
+                class="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] rounded-lg transition cursor-pointer"
+              >
+                Appliquer le visuel
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Répartition des colonnes</label>
+                <select v-model="villageLayoutConfig.split" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+                  <option value="50-50">50% Gauche / 50% Droite</option>
+                  <option value="40-60">40% Gauche / 60% Droite</option>
+                  <option value="stacked">Superposé (Pleine largeur)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Colonnes grille droite</label>
+                <select v-model="villageLayoutConfig.rightCols" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+                  <option value="2">2 colonnes (2×2)</option>
+                  <option value="3">3 colonnes (3×2)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Espacement vertical</label>
+                <select v-model="villageLayoutConfig.spacing" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+                  <option value="compact">Compact</option>
+                  <option value="normal">Équilibré (Défaut)</option>
+                  <option value="relaxed">Aéré (Grand espace)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Écart entre les cartes</label>
+                <select v-model="villageLayoutConfig.gapSize" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+                  <option value="tight">Serré</option>
+                  <option value="normal">Standard</option>
+                  <option value="wide">Espacé</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Style des cartes</label>
+                <select v-model="villageLayoutConfig.cardStyle" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+                  <option value="glass">Translucide (Verre)</option>
+                  <option value="solid">Opaque contrasté</option>
+                  <option value="bordered">Bordure émeraude marquée</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Ambiance couleur</label>
+                <select v-model="villageLayoutConfig.theme" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
+                  <option value="dark">Vert Nuit Sombre (#07291b)</option>
+                  <option value="forest">Vert Forêt Dégradé</option>
+                  <option value="light">Fond Clair Damier</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          <div v-if="sponsorMaterialRequests.length === 0" class="text-center py-12 text-slate-400 text-xs italic">
-            Aucun matériel n'est actuellement délégué à la recherche de sponsors.
-          </div>
+          <div class="space-y-2.5">
+            <div
+              v-for="(item, index) in sortedVillageItems"
+              :key="item.id"
+              class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:bg-white transition"
+            >
+              <div class="flex items-center gap-3 sm:gap-4">
+                <div class="flex flex-col gap-1">
+                  <button
+                    @click="moveVillageItem(index, -1)"
+                    :disabled="index === 0"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Monter"
+                  >
+                    <i class="fa-solid fa-chevron-up"></i>
+                  </button>
+                  <button
+                    @click="moveVillageItem(index, 1)"
+                    :disabled="index === sortedVillageItems.length - 1"
+                    class="w-6 h-6 rounded bg-white border border-slate-300 text-slate-600 hover:text-emerald-700 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]"
+                    title="Descendre"
+                  >
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </button>
+                </div>
 
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                  <th class="p-3">Pôle</th>
-                  <th class="p-3">Matériel</th>
-                  <th class="p-3">Justification</th>
-                  <th class="p-3">Coût estimé</th>
-                  <th class="p-3">Étape Sponsoring</th>
-                  <th class="p-3 text-right">Actions Sponsors</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr v-for="req in sponsorMaterialRequests" :key="req.id">
-                  <td class="p-3 font-bold uppercase text-[11px] text-slate-700">{{ req.pole }}</td>
-                  <td class="p-3 font-extrabold text-slate-900">
-                    {{ req.article }} <span class="text-slate-500 font-mono">(x{{ req.quantite }})</span>
-                  </td>
-                  <td class="p-3 text-slate-600 max-w-xs leading-relaxed">{{ req.details }}</td>
-                  <td class="p-3 font-mono font-bold text-emerald-800">
-                    {{ req.estimated_price ? `${(req.estimated_price * req.quantite).toFixed(2)} €` : '—' }}
-                  </td>
+                <div class="h-12 min-w-[48px] max-w-[96px] px-1.5 rounded-xl bg-white text-emerald-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                  <img
+                    v-if="item.image_url"
+                    :src="item.image_url"
+                    :alt="item.title"
+                    :class="item.logo_fit === 'cover' ? 'w-12 h-12 object-cover rounded-lg' : 'max-h-10 max-w-full w-auto h-auto object-contain'"
+                  />
+                  <i v-else :class="['fa-solid', item.icon || 'fa-tent', 'text-lg']"></i>
+                </div>
 
-                  <td class="p-3">
-                    <span v-if="req.statut_sponsor === 'sponsor_trouve'" class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1">
-                      <i class="fa-solid fa-circle-check text-emerald-600"></i>
-                      <span>Sponsor trouvé (Validé)</span>
+                <div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h4 class="font-bold text-slate-900 text-sm">{{ item.title }}</h4>
+                    <span
+                      class="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded border"
+                      :class="item.layout_zone === 'left'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : item.layout_zone === 'right'
+                          ? 'bg-sky-50 text-sky-800 border-sky-200'
+                          : 'bg-slate-200 text-slate-700 border-slate-300'"
+                    >
+                      {{ item.layout_zone === 'left' ? 'Bandeau Gauche' : item.layout_zone === 'right' ? 'Grille Droite' : 'Auto' }}
                     </span>
-
-                    <span v-else-if="req.statut_sponsor === 'en_recherche'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
-                      <i class="fa-solid fa-magnifying-glass text-amber-600"></i>
-                      <span>Recherche en cours</span>
+                    <span v-if="item.is_wide" class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200">
+                      Carte Large (2 col.)
                     </span>
+                  </div>
+                  <p v-if="item.description" class="text-xs text-slate-500 mt-0.5 line-clamp-2">{{ item.description }}</p>
+                </div>
+              </div>
 
-                    <span v-else-if="req.statut_sponsor === 'non_finance'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1">
-                      <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
-                      <span>Non sponsorisé</span>
-                    </span>
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  @click="openEditVillage(item)"
+                  class="p-2 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 cursor-pointer"
+                  title="Modifier"
+                >
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button
+                  @click="deleteVillageItem(item.id)"
+                  class="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                  title="Supprimer"
+                >
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
 
-                    <span v-else-if="req.statut_sponsor === 'refuse'" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
-                      <i class="fa-solid fa-ban text-rose-500"></i>
-                      <span>Refusé</span>
-                    </span>
-
-                    <span v-else class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                      Nouveau besoin
-                    </span>
-                  </td>
-
-                  <td class="p-3 text-right whitespace-nowrap">
-                    <div v-if="req.statut_sponsor === 'en_attente'" class="flex items-center justify-end gap-1.5">
-                      <button 
-                        @click="handleSponsorResponse(req, 'accepte_recherche')"
-                        class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
-                        title="Accepter de prospecter pour ce matériel et créer le post-it"
-                      >
-                        <i class="fa-solid fa-check"></i>
-                        <span>Chercher un sponsor</span>
-                      </button>
-                      <button 
-                        @click="handleSponsorResponse(req, 'refuse')"
-                        class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
-                        title="Refuser de prendre en charge ce besoin"
-                      >
-                        <i class="fa-solid fa-xmark"></i>
-                        <span>Refuser</span>
-                      </button>
-                    </div>
-
-                    <div v-else-if="req.statut_sponsor === 'en_recherche'" class="flex items-center justify-end gap-1.5">
-                      <button 
-                        @click="handleSponsorResponse(req, 'trouve')"
-                        class="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                        title="Confirmer qu'un sponsor prend en charge ce matériel à 100%"
-                      >
-                        <i class="fa-solid fa-award"></i>
-                        <span>Sponsor trouvé !</span>
-                      </button>
-                      <button 
-                        @click="handleSponsorResponse(req, 'abandon')"
-                        class="px-2 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
-                        title="Déclarer qu'aucun sponsor n'a été trouvé (renvoi à la logistique/trésorerie)"
-                      >
-                        <span>Abandonner</span>
-                      </button>
-                    </div>
-
-                    <div v-else-if="req.statut_sponsor === 'sponsor_trouve'" class="flex items-center justify-end gap-2">
-                      <span class="text-[11px] font-black text-emerald-700">Validé</span>
-                      <button 
-                        @click="handleSponsorResponse(req, 'abandon')"
-                        class="text-[10px] text-slate-400 hover:text-rose-600 hover:underline cursor-pointer"
-                        title="Annuler si le sponsor s'est désisté"
-                      >
-                        Désistement ?
-                      </button>
-                    </div>
-
-                    <div v-else class="flex items-center justify-end gap-1.5">
-                      <button 
-                        @click="handleSponsorResponse(req, 'accepte_recherche')"
-                        class="px-2 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition cursor-pointer"
-                        title="Rouvrir la recherche"
-                      >
-                        Retenter la recherche
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <div v-if="sortedVillageItems.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+              Aucun stand enregistré en base (les éléments par défaut s'affichent sur le site).
+            </div>
           </div>
         </div>
 
-        <!-- 3. PARTENAIRES DE LA PAGE PRINCIPALE -->
-        <div v-if="currentSponsorSubTab === 'partenaires'" class="space-y-4">
-          <div class="flex justify-between items-center">
+        <!-- Bloc 4 : Sponsors officiels affichés sur le site -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
+          <div class="flex justify-between items-center flex-wrap gap-4">
             <div>
-              <h3 class="text-lg font-black text-slate-900">Sponsors officiels affichés sur le site</h3>
+              <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-award text-amber-500"></i>
+                <span>Sponsors officiels affichés sur le site ({{ sponsors.length }})</span>
+              </h3>
               <p class="text-xs text-slate-500 mt-0.5">Ces logos et descriptions apparaissent directement sur la page d'accueil.</p>
             </div>
             <button 
@@ -2946,10 +3336,10 @@ onMounted(async () => {
             <div 
               v-for="s in sponsors" 
               :key="s.id" 
-              class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between"
+              class="bg-slate-50 rounded-2xl border border-slate-200 p-5 flex flex-col justify-between"
             >
               <div class="flex items-start gap-4 mb-4">
-                <div class="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center p-2 flex-shrink-0">
+                <div class="w-16 h-16 rounded-xl bg-white border border-slate-200 flex items-center justify-center p-2 flex-shrink-0">
                   <img v-if="s.logo_url" :src="s.logo_url" :alt="s.nom" class="max-h-full max-w-full object-contain" />
                   <i v-else class="fa-solid fa-handshake text-xl text-slate-300"></i>
                 </div>
@@ -2959,17 +3349,17 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-200/70">
                 <button 
                   @click="openEditSponsor(s)" 
-                  class="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+                  class="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-white border border-slate-200 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
                 >
                   <i class="fa-solid fa-pen text-[10px]"></i>
                   <span>Modifier</span>
                 </button>
                 <button 
                   @click="deleteSponsor(s.id)" 
-                  class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition border border-rose-200 cursor-pointer flex items-center gap-1"
+                  class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition border border-rose-200 bg-white cursor-pointer flex items-center gap-1"
                 >
                   <i class="fa-solid fa-trash text-[10px]"></i>
                   <span>Supprimer</span>
@@ -2978,8 +3368,8 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div v-if="sponsors.length === 0" class="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
-            Aucun sponsor officiel enregistré pour l'instant.
+          <div v-if="sponsors.length === 0" class="text-center py-8 text-slate-400 text-xs italic">
+            Aucun sponsor officiel enregistré sur le site pour l'instant.
           </div>
         </div>
 
@@ -3222,7 +3612,7 @@ onMounted(async () => {
 
   <!-- MODALE AJOUT / MODIFICATION VILLAGE SOLIDAIRE -->
   <div v-if="showVillageModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
       <button @click="showVillageModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
         <i class="fa-solid fa-xmark text-lg"></i>
       </button>
@@ -3231,15 +3621,14 @@ onMounted(async () => {
         {{ editingVillageItem ? 'Modifier ce stand / activité' : 'Ajouter au Village Solidaire' }}
       </h3>
 
-      <form @submit.prevent="saveVillageItem" class="space-y-3.5">
+      <form @submit.prevent="saveVillageItem" class="space-y-4">
         <div>
           <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Titre *</label>
-          <input v-model="villageForm.title" required type="text" placeholder="Ex. Stand Gourmand & Crêpes" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs" />
+          <input v-model="villageForm.title" required type="text" placeholder="Ex. Stand France Alzheimer 37" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs" />
         </div>
 
-        <!-- CHOIX DE LA DISPOSITION -->
         <div>
-          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Disposition dans la section</label>
+          <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Emplacement dans la section</label>
           <div class="grid grid-cols-3 gap-2">
             <button
               type="button"
@@ -3266,28 +3655,37 @@ onMounted(async () => {
               Automatique
             </button>
           </div>
+
+          <label v-if="villageForm.layout_zone === 'right'" class="flex items-center gap-2 mt-2 text-xs text-slate-700 cursor-pointer select-none">
+            <input type="checkbox" v-model="villageForm.is_wide" class="rounded text-emerald-600 focus:ring-emerald-500" />
+            <span>Étendre cette carte sur toute la largeur de la grille (2 colonnes)</span>
+          </label>
         </div>
 
-        <!-- IMAGE PERSONNALISÉE (URL OU FICHIER) -->
-        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-          <label class="block text-xs font-bold uppercase text-slate-700">Image comme icône (optionnel)</label>
+        <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+          <label class="block text-xs font-bold uppercase text-slate-700">Logo ou Image (optionnel)</label>
           
           <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-xl bg-white border border-slate-300 flex items-center justify-center overflow-hidden flex-shrink-0">
-              <img v-if="villageForm.image_url" :src="villageForm.image_url" alt="Aperçu" class="w-full h-full object-cover" />
-              <i v-else :class="['fa-solid', villageForm.icon, 'text-slate-400']"></i>
+            <div class="h-14 min-w-[56px] max-w-[110px] px-2 rounded-xl bg-white border border-slate-300 flex items-center justify-center overflow-hidden flex-shrink-0">
+              <img
+                v-if="villageForm.image_url"
+                :src="villageForm.image_url"
+                alt="Aperçu"
+                :class="villageForm.logo_fit === 'cover' ? 'w-14 h-14 object-cover' : 'max-h-12 max-w-full w-auto h-auto object-contain'"
+              />
+              <i v-else :class="['fa-solid', villageForm.icon, 'text-slate-400 text-lg']"></i>
             </div>
 
             <div class="flex-1 space-y-1.5">
               <input
                 v-model="villageForm.image_url"
                 type="url"
-                placeholder="Coller le lien d'une image (https://...)"
+                placeholder="Coller le lien d'un logo (https://...)"
                 class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
               />
               <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer">
                 <i class="fa-solid fa-upload"></i>
-                <span>{{ uploadingVillageImg ? 'Importation...' : 'Ou importer un fichier image' }}</span>
+                <span>{{ uploadingVillageImg ? 'Importation...' : 'Importer un fichier logo (PNG, SVG, JPG)' }}</span>
                 <input type="file" accept="image/*" @change="handleVillageImageUpload" class="hidden" />
               </label>
             </div>
@@ -3297,25 +3695,55 @@ onMounted(async () => {
               type="button"
               @click="villageForm.image_url = ''"
               class="text-xs text-rose-600 hover:underline cursor-pointer"
-              title="Retirer l'image"
+              title="Retirer le logo"
             >
               <i class="fa-solid fa-xmark"></i>
             </button>
+          </div>
+
+          <div v-if="villageForm.image_url" class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200">
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Proportions</label>
+              <select v-model="villageForm.logo_fit" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs font-bold bg-white">
+                <option value="original">Taille d'origine</option>
+                <option value="contain">Ajusté (non rogné)</option>
+                <option value="cover">Carré rogné</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Taille max</label>
+              <select v-model="villageForm.logo_size" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs font-bold bg-white">
+                <option value="sm">Petit</option>
+                <option value="md">Moyen</option>
+                <option value="lg">Grand</option>
+                <option value="xl">Très grand</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Fond du logo</label>
+              <select v-model="villageForm.logo_bg" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs font-bold bg-white">
+                <option value="white">Cadre blanc</option>
+                <option value="transparent">Transparent</option>
+              </select>
+            </div>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Couleur du carré</label>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Couleur du carré icône</label>
             <select v-model="villageForm.color_theme" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white">
               <option value="amber">Jaune / Ambre</option>
               <option value="teal">Vert Menthe / Turquoise</option>
               <option value="emerald">Vert Émeraude</option>
+              <option value="sky">Bleu Ciel</option>
             </select>
           </div>
 
           <div>
-            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Icône de secours</label>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Icône (si pas de logo)</label>
             <select v-model="villageForm.icon" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white">
               <option v-for="ic in villageIconOptions" :key="ic.id" :value="ic.id">{{ ic.label }}</option>
             </select>

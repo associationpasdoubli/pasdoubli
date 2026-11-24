@@ -24,7 +24,7 @@ const courses = [
     isFreeDonation: false,
     ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
     priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
-    startTime: 'à définir',
+    startTime: '10h20',
     terrain: 'Chemin et route',
     condition: 'PPS ou licence FFA (+16 ans)',
     description: 'Parcours de 10 km au départ du Square des Anciens Combattants d\'Athée-sur-Cher.'
@@ -38,7 +38,7 @@ const courses = [
     isFreeDonation: false,
     ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
     priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
-    startTime: 'à définir',
+    startTime: '11h10',
     terrain: 'Route',
     condition: 'PPS ou licence FFA (+16 ans)',
     description: 'Une distance dynamique accessible à tous les coureurs dès 16 ans pour se dépasser dans une ambiance conviviale.'
@@ -46,30 +46,30 @@ const courses = [
   {
     id: 'course-3km',
     distance: '3 KM',
-    title: 'COURSE 10 / 16 ANS',
+    title: 'COURSE 12 / 16 ANS',
     subtitle: 'Course jeunes chronométrée',
     priceLabel: '3 €',
     isFreeDonation: false,
     ribbonBg: 'bg-[#1f7a4c] group-hover:bg-[#166534]',
     priceBorder: 'border-[#1f7a4c] text-[#1f7a4c] group-hover:bg-emerald-50',
-    startTime: 'à définir',
+    startTime: '11h55',
     terrain: 'Route',
-    condition: 'Jeunes de 10 à 16 ans (accord parental)',
-    description: 'Un tracé court et rapide spécialement calibré pour les jeunes coureurs de 10 à 16 ans.'
+    condition: 'Jeunes de 12 à 16 ans (accord parental)',
+    description: 'Un tracé court et rapide spécialement calibré pour les jeunes coureurs de 12 à 16 ans.'
   },
   {
-    id: 'course-1-2km',
-    distance: '1,2 KM',
-    title: 'COURSE - DE 10 ANS',
+    id: 'course-0;-km',
+    distance: '0,6 KM',
+    title: 'COURSE - DE 12 ANS',
     subtitle: 'Course enfants chronométrée',
     priceLabel: 'DON LIBRE',
     isFreeDonation: true,
     ribbonBg: 'bg-[#0284c7] group-hover:bg-[#0369a1]',
     priceBorder: 'border-[#1e6091] text-[#1e6091] bg-sky-50 group-hover:bg-sky-100',
-    startTime: 'à définir',
+    startTime: '12h15',
     terrain: 'Boucle sécurisée au village',
-    condition: 'Enfants de moins de 10 ans (accord parental)',
-    description: 'La course dédiée aux enfants de moins de 10 ans !'
+    condition: 'Enfants de moins de 12 ans (accord parental)',
+    description: 'La course dédiée aux enfants de moins de 12 ans !'
   }
 ];
 
@@ -83,7 +83,7 @@ const marches = [
     isFreeDonation: false,
     ribbonBg: 'bg-[#0d9488] group-hover:bg-[#0f766e]',
     priceBorder: 'border-[#0d9488] text-[#0d9488] group-hover:bg-teal-50',
-    startTime: 'à définir',
+    startTime: '9h',
     terrain: 'Route',
     condition: 'Ouvert à tous • Sans certificat médical',
     description: 'Une marche solidaire de 6 km sans chronomètre pour soutenir France Alzheimer 37 en famille ou entre amis.'
@@ -97,7 +97,7 @@ const marches = [
     isFreeDonation: false,
     ribbonBg: 'bg-[#0d9488] group-hover:bg-[#0f766e]',
     priceBorder: 'border-[#0d9488] text-[#0d9488] group-hover:bg-teal-50',
-    startTime: 'à définir',
+    startTime: '9h45',
     terrain: 'Route',
     condition: 'Ouvert à tous • Sans certificat médical',
     description: 'Une marche solidaire de 6 km sans chronomètre pour soutenir France Alzheimer 37 en famille ou entre amis.'
@@ -138,9 +138,7 @@ const selectedRace = ref(null);
           <!-- BLOC 1 : LES COURSES -->
           <div>
             <div class="flex items-center gap-3 mb-5">
-              <span class="w-8 h-8 rounded-lg bg-[#1f7a4c] text-white flex items-center justify-center text-sm shadow-2xs">
-                <i class="fa-solid fa-person-running"></i>
-              </span>
+              
               <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
                 Les Courses
               </h3>
@@ -195,15 +193,11 @@ const selectedRace = ref(null);
           <!-- BLOC 2 : LES MARCHES -->
           <div>
             <div class="flex items-center gap-3 mb-5">
-              <span class="w-8 h-8 rounded-lg bg-[#0d9488] text-white flex items-center justify-center text-sm shadow-2xs">
-                <i class="fa-solid fa-person-walking"></i>
-              </span>
+              
               <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
                 Les Marches Solidaires
               </h3>
-              <span class="px-2.5 py-0.5 bg-teal-50 text-[#0d9488] border border-teal-200 rounded-md text-[10px] font-extrabold uppercase">
-                Sans certificat
-              </span>
+              
               <div class="flex-1 h-[2px] bg-[#0d9488]/20 rounded-full"></div>
             </div>
 
