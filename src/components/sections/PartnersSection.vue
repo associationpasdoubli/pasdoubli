@@ -7,6 +7,14 @@ const { openModal } = useModal();
 const sponsors = ref([]);
 const loading = ref(true);
 
+// Sécurise le lien s'il a été saisi sans "https://" dans l'admin
+const formatWebsiteUrl = (url) => {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
+
 const fetchSponsors = async () => {
   const { data, error } = await supabase
     .from('sponsors')
@@ -31,9 +39,6 @@ onMounted(fetchSponsors);
         <h3 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
           Ils soutiennent l'événement
         </h3>
-        <!-- <p class="text-slate-700 mt-2 text-sm sm:text-base font-medium">
-          Entreprises, commerçants : associez votre image à une action positive avec une déduction d'impôt de <strong class="text-slate-900 font-bold">60%</strong>.
-        </p> -->
       </div>
 
       <!-- État : Chargement -->
@@ -46,11 +51,25 @@ onMounted(fetchSponsors);
         v-else-if="sponsors.length > 0" 
         class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 items-stretch"
       >
-        <div 
+        <component
+          :is="formatWebsiteUrl(s.website_url) ? 'a' : 'div'"
           v-for="s in sponsors" 
-          :key="s.id" 
-          class="rounded-2xl border border-white/80 bg-white/90 backdrop-blur-xs p-5 flex flex-col items-center justify-center text-center shadow-xs transition hover:shadow-md hover:-translate-y-0.5 duration-200"
+          :key="s.id"
+          :href="formatWebsiteUrl(s.website_url) || undefined"
+          :target="formatWebsiteUrl(s.website_url) ? '_blank' : undefined"
+          :rel="formatWebsiteUrl(s.website_url) ? 'noopener noreferrer' : undefined"
+          :title="formatWebsiteUrl(s.website_url) ? `Visiter le site de ${s.nom}` : undefined"
+          :class="formatWebsiteUrl(s.website_url) ? 'cursor-pointer hover:border-emerald-500/60 group' : ''"
+          class="relative rounded-2xl border border-white/80 bg-white/90 backdrop-blur-xs p-5 flex flex-col items-center justify-center text-center shadow-xs transition hover:shadow-md hover:-translate-y-0.5 duration-200"
         >
+          <!-- Icône lien externe discrète si le sponsor possède une page -->
+          <span
+            v-if="formatWebsiteUrl(s.website_url)"
+            class="absolute top-3 right-3 text-slate-300 group-hover:text-emerald-600 transition text-[11px]"
+          >
+            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          </span>
+
           <div class="h-16 w-full flex items-center justify-center mb-3 p-1">
             <img 
               v-if="s.logo_url" 
@@ -63,13 +82,13 @@ onMounted(fetchSponsors);
               <i class="fa-solid fa-handshake-simple text-xl"></i>
             </div>
           </div>
-          <span class="font-extrabold text-xs sm:text-sm text-slate-900 line-clamp-1">
+          <span class="font-extrabold text-xs sm:text-sm text-slate-900 group-hover:text-emerald-700 transition line-clamp-1">
             {{ s.nom }}
           </span>
           <span v-if="s.description" class="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">
             {{ s.description }}
           </span>
-        </div>
+        </component>
       </div>
 
       <!-- État : Aucun sponsor -->
@@ -77,7 +96,7 @@ onMounted(fetchSponsors);
         Aucun partenaire enregistré pour l'instant.
       </div>
 
-      <!-- Encart Appel Bénévoles (placé avec un espacement supérieur équilibré) -->
+      <!-- Encart Appel Bénévoles -->
       <div 
         id="benevoles" 
         class="mt-16 sm:mt-20 bg-gradient-to-br from-emerald-800 to-emerald-950 rounded-3xl p-8 sm:p-12 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6"

@@ -402,7 +402,7 @@ const faqForm = ref({ question: '', reponse: '' });
 
 const showSponsorModal = ref(false);
 const editingSponsor = ref(null);
-const sponsorForm = ref({ nom: '', description: '', logo_url: '' });
+const sponsorForm = ref({ nom: '', description: '', logo_url: '', website_url: '' });
 
 const availabilityLabels = {
   jour_j: 'Le jour J (dimanche)',
@@ -1254,13 +1254,18 @@ const deleteVolunteer = async (id) => {
 
 const openCreateSponsor = () => {
   editingSponsor.value = null;
-  sponsorForm.value = { nom: '', description: '', logo_url: '' };
+  sponsorForm.value = { nom: '', description: '', logo_url: '', website_url: '' };
   showSponsorModal.value = true;
 };
 
 const openEditSponsor = (s) => {
   editingSponsor.value = s;
-  sponsorForm.value = { nom: s.nom, description: s.description || '', logo_url: s.logo_url || '' };
+  sponsorForm.value = {
+    nom: s.nom,
+    description: s.description || '',
+    logo_url: s.logo_url || '',
+    website_url: s.website_url || ''
+  };
   showSponsorModal.value = true;
 };
 
@@ -1271,10 +1276,11 @@ const handleSaveSponsor = async () => {
   }
 
   const payload = {
-    nom: sponsorForm.value.nom.trim(),
-    description: sponsorForm.value.description ? sponsorForm.value.description.trim() : null,
-    logo_url: sponsorForm.value.logo_url ? sponsorForm.value.logo_url.trim() : null
-  };
+  nom: sponsorForm.value.nom.trim(),
+  description: sponsorForm.value.description ? sponsorForm.value.description.trim() : null,
+  logo_url: sponsorForm.value.logo_url ? sponsorForm.value.logo_url.trim() : null,
+  website_url: sponsorForm.value.website_url ? sponsorForm.value.website_url.trim() : null
+};
 
   try {
     if (editingSponsor.value) {
@@ -4289,6 +4295,10 @@ onMounted(async () => {
           <label class="block text-xs font-bold uppercase text-slate-600 mb-1">URL du logo</label>
           <input v-model="sponsorForm.logo_url" type="url" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
         </div>
+        <div>
+        <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Lien vers leur site ou page (optionnel)</label>
+        <input v-model="sponsorForm.website_url" type="url" placeholder="https://www.entreprise.fr" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-emerald-600" />
+      </div>
         <button @click="handleSaveSponsor" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition cursor-pointer">
           {{ editingSponsor ? 'Enregistrer' : 'Créer' }}
         </button>
